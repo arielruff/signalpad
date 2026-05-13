@@ -1,9 +1,16 @@
 {
   "history": [
     {
-      "version": "0.1.1",
+      "version": "0.1.2",
       "date": "2026-05-13",
       "changes": []
+    },
+    {
+      "version": "0.1.1",
+      "date": "2026-05-13",
+      "changes": [
+        "Update version to 0.1.1 and implement changelog management"
+      ]
     },
     {
       "version": "0.1.0",
