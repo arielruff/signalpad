@@ -22,6 +22,8 @@ import ContextMenu from "./ContextMenu";
 import CommandPalette from "./CommandPalette";
 import ActivityHeatmap from "./ActivityHeatmap";
 import AmbientSound from "./AmbientSound";
+import ChangelogModal from "./ChangelogModal";
+import changelog from "../changelog.json";
 
 marked.setOptions({ gfm: true, breaks: true });
 
@@ -1683,13 +1685,17 @@ function HelpView({ onClose }) {
 
         {/* ── Version ── */}
         <section>
-          <div className="px-3 py-3 rounded border border-zinc-800 bg-zinc-900/30 flex items-center gap-2">
+          <button
+            onClick={() => setShowChangelog(true)}
+            className="w-full px-3 py-3 rounded border border-zinc-800 bg-zinc-900/30 flex items-center gap-2 hover:border-zinc-700 hover:bg-zinc-800/40 transition-colors text-left"
+          >
             <NotebookPen size={13} className="text-cyan-400 shrink-0" />
             <div>
               <span className="text-[12px] font-bold text-cyan-400 tracking-wider">SignalPad</span>
-              <span className="text-[10px] text-zinc-700 ml-2">v0.1.0</span>
+              <span className="text-[10px] text-zinc-600 ml-2">v{changelog.history[0]?.version ?? "0.1.0"}</span>
             </div>
-          </div>
+            <span className="ml-auto text-[9px] text-zinc-700 hover:text-zinc-500 transition-colors">Patch notes</span>
+          </button>
         </section>
 
       </div>
@@ -1708,6 +1714,7 @@ export default function SignalPad() {
   const [mdPreview, setMdPreview]       = useState(false);
   const [zenMode, setZenMode]           = useState(false);
   const [showPalette, setShowPalette]   = useState(false);
+  const [showChangelog, setShowChangelog] = useState(false);
   const [activeTag, setActiveTag]       = useState(null);
   const [dragId, setDragId]             = useState(null);
   const [dragOverId, setDragOverId]     = useState(null);
@@ -1870,6 +1877,9 @@ export default function SignalPad() {
         />
       )}
 
+      {/* Changelog / patch notes */}
+      {showChangelog && <ChangelogModal onClose={() => setShowChangelog(false)} />}
+
       {/* Command palette */}
       {showPalette && (
         <CommandPalette
@@ -1894,6 +1904,13 @@ export default function SignalPad() {
             <div className="flex items-center gap-2" data-tauri-drag-region>
               <NotebookPen size={13} className="text-cyan-400 pointer-events-none" />
               <span className="text-[11px] font-bold tracking-[0.18em] uppercase text-cyan-400 pointer-events-none">SignalPad</span>
+              <button
+                onClick={() => setShowChangelog(true)}
+                title="View patch notes"
+                className="text-[9px] font-mono text-zinc-600 hover:text-cyan-500 hover:bg-zinc-800 transition-colors px-1 py-0.5 rounded leading-none"
+              >
+                v{changelog.history[0]?.version ?? "0.1.0"}
+              </button>
               {showSettings && (
                 <><span className="text-zinc-700 text-[10px] pointer-events-none">/</span>
                   <span className="text-[11px] text-zinc-400 pointer-events-none">Settings</span></>

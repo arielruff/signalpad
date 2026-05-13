@@ -11,7 +11,13 @@
       "Bash(npm install *)",
       "Bash(npm run *)",
       "Bash(node -e ' *)",
-      "Bash(node -e \"const w = require\\('./node_modules/@tauri-apps/api/window'\\); console.log\\(Object.keys\\(w\\).filter\\(k => k.toLowerCase\\(\\).includes\\('size'\\) || k.toLowerCase\\(\\).includes\\('min'\\)\\)\\)\")"
+      "Bash(node -e \"const w = require\\('./node_modules/@tauri-apps/api/window'\\); console.log\\(Object.keys\\(w\\).filter\\(k => k.toLowerCase\\(\\).includes\\('size'\\) || k.toLowerCase\\(\\).includes\\('min'\\)\\)\\)\")",
+      "Bash(mkdir -p \"d:/MyFiles/AR Collective/SIGNALPAD/scripts\")",
+      "Bash(mkdir -p \"d:/MyFiles/AR Collective/SIGNALPAD/.githooks\")",
+      "Bash(git config *)",
+      "Bash(printf 'Add version system with patch notes UI\\\\n')",
+      "Bash(node scripts/update-changelog-msg.cjs /tmp/test-commit-msg.txt)",
+      "Bash(node -e \"const c=require\\('./src/changelog.json'\\); console.log\\(JSON.stringify\\(c.history[0], null, 2\\)\\)\")"
     ]
   }
 }
