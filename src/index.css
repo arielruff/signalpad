@@ -1,0 +1,314 @@
+@import "tailwindcss";
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+
+/* ── Theme variables ── */
+:root {
+  --bg-base:        #090b11;
+  --bg-glass:       rgba(9, 11, 17, 0.65);
+  --bg-950:         #09090b;
+  --bg-900:         #18181b;
+  --bg-800:         #27272a;
+  --bg-700:         #3f3f46;
+  --bg-strip:       rgb(9, 11, 17);
+  --text-primary:   #d4d4d8;
+  --text-secondary: #a1a1aa;
+  --text-muted:     #71717a;
+  --text-faint:     #52525b;
+  --border-base:    #3f3f46;
+  --border-subtle:  #27272a;
+  --accent:         #22d3ee;
+  --accent-bg:      rgba(34, 211, 238, 0.1);
+  --scrollbar:      #3f3f46;
+  --card-bg:        rgba(24, 24, 27, 0.4);
+}
+
+[data-theme="light"] {
+  --bg-base:        #f7f3ee;
+  --bg-glass:       rgba(247, 243, 238, 0.92);
+  --bg-950:         #f5f1ec;
+  --bg-900:         #ede8e1;
+  --bg-800:         #e2ddd6;
+  --bg-700:         #ccc7be;
+  --bg-strip:       #f5f1ec;
+  --text-primary:   #1c1917;
+  --text-secondary: #44403c;
+  --text-muted:     #78716c;
+  --text-faint:     #a8a29e;
+  --border-base:    #d6d0c8;
+  --border-subtle:  #e2ddd6;
+  --accent:         #0891b2;
+  --accent-bg:      rgba(8, 145, 178, 0.08);
+  --scrollbar:      #ccc7be;
+  --card-bg:        rgba(237, 232, 225, 0.6);
+}
+
+[data-theme="red"] {
+  --bg-base:        #0e0508;
+  --bg-glass:       rgba(14, 5, 8, 0.72);
+  --bg-950:         #0e0508;
+  --bg-900:         #180810;
+  --bg-800:         #2a0e18;
+  --bg-700:         #3d1422;
+  --bg-strip:       rgb(14, 5, 8);
+  --text-primary:   #f5cdd4;
+  --text-secondary: #e8a0ad;
+  --text-muted:     #c0607a;
+  --text-faint:     #8a3549;
+  --border-base:    #4a1a28;
+  --border-subtle:  #2a0e18;
+  --accent:         #ff1a3a;
+  --accent-bg:      rgba(255, 26, 58, 0.12);
+  --scrollbar:      #4a1a28;
+  --card-bg:        rgba(42, 14, 24, 0.5);
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  background: transparent;
+  color: var(--text-primary);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ── App shell ── */
+.app-glass {
+  background: var(--bg-glass);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+}
+
+.solid-strip {
+  background: var(--bg-strip);
+  pointer-events: none;
+}
+
+/* ── Scrollbar ── */
+* { scrollbar-width: thin; scrollbar-color: var(--scrollbar) transparent; }
+::-webkit-scrollbar { width: 4px; height: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--scrollbar); border-radius: 999px; }
+::-webkit-scrollbar-thumb:hover { background: var(--text-faint); }
+
+/* ── Glass text ── */
+.glass-text {
+  color: var(--text-primary);
+  font-weight: 700;
+  text-shadow: 0 0 8px rgba(255,255,255,0.25), 0 0 20px rgba(255,255,255,0.08);
+}
+
+[data-theme="light"] .glass-text {
+  text-shadow: none;
+  color: var(--text-secondary);
+}
+
+.glass-input {
+  color: var(--text-primary) !important;
+  text-shadow: 0 0 8px rgba(255,255,255,0.25), 0 0 20px rgba(255,255,255,0.08);
+}
+
+[data-theme="light"] .glass-input {
+  text-shadow: none;
+}
+
+.glass-input::placeholder {
+  color: var(--text-faint);
+  text-shadow: none;
+}
+
+/* ── Smooth caret ── */
+.smooth-caret {
+  position: absolute;
+  width: 1.5px;
+  background: var(--accent);
+  border-radius: 1px;
+  opacity: 0;
+  z-index: 2;
+  pointer-events: none;
+  will-change: top, left, height;
+}
+@keyframes caret-blink { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
+.smooth-caret--blinking { animation: caret-blink 1s ease-in-out infinite; }
+
+/* ── Wiki links ── */
+.wiki-link {
+  color: var(--accent);
+  cursor: pointer;
+  border-bottom: 1px dashed color-mix(in srgb, var(--accent) 50%, transparent);
+  transition: color 0.15s, border-color 0.15s;
+}
+.wiki-link:hover { opacity: 0.8; }
+.wiki-link--broken { color: #f87171; border-color: #f8717180; }
+.wiki-link--broken:hover { color: #fca5a5; }
+
+/* ── Typewriter focus dim — overlay approach (mask-image can't transition) ── */
+.typewriter-overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 3;
+  background: linear-gradient(
+    to bottom,
+    var(--bg-950) 0%,
+    transparent 28%,
+    transparent 72%,
+    var(--bg-950) 100%
+  );
+  opacity: 0;
+  transition: opacity 0.35s ease;
+}
+.typewriter-overlay.active {
+  opacity: 1;
+}
+
+/* ── Note content (editor + read views) ── */
+.signalpad-content { font-size: 14px; color: var(--text-primary); line-height: 1.75; }
+.signalpad-content:empty::before { content: attr(data-placeholder); color: var(--text-faint); pointer-events: none; }
+
+.signalpad-content h1,
+.signalpad-content h2,
+.signalpad-content h3 {
+  color: var(--text-primary);
+  font-weight: 700;
+  margin: 0.6em 0 0.3em;
+  font-size: 15px;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+  user-select: none;
+}
+
+.signalpad-content h1:hover::before,
+.signalpad-content h2:hover::before,
+.signalpad-content h3:hover::before {
+  content: "▾ ";
+  font-size: 11px;
+  opacity: 0.4;
+}
+
+.signalpad-content h1.collapsed::before,
+.signalpad-content h2.collapsed::before,
+.signalpad-content h3.collapsed::before {
+  content: "▸ ";
+  font-size: 11px;
+  opacity: 0.6;
+}
+
+.signalpad-content .collapsed-section { display: none; }
+
+.signalpad-content ul { list-style: disc; padding-left: 1.4em; margin: 0.4em 0; }
+.signalpad-content ol { list-style: decimal; padding-left: 1.4em; margin: 0.4em 0; }
+.signalpad-content li { margin: 0.15em 0; }
+.signalpad-content hr { border: none; border-top: 1px solid var(--border-base); margin: 0.8em 0; }
+.signalpad-content b,
+.signalpad-content strong { color: var(--text-primary); }
+.signalpad-content p { margin: 0.25em 0; }
+.signalpad-content .empty { color: var(--text-faint); font-style: italic; }
+
+/* ── Checklist ── */
+.signalpad-content input[type="checkbox"] {
+  accent-color: var(--accent);
+  width: 14px;
+  height: 14px;
+  margin-right: 6px;
+  vertical-align: middle;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.signalpad-content .checklist-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin: 0.2em 0;
+}
+
+.signalpad-content .checklist-item.checked > span {
+  text-decoration: line-through;
+  opacity: 0.5;
+}
+
+.signalpad-content img {
+  max-width: 100%;
+  height: auto;
+  display: block;
+  border-radius: 6px;
+  border: 1px solid color-mix(in srgb, var(--accent) 18%, transparent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 4%, transparent), 0 3px 14px rgba(0,0,0,0.55);
+  margin: 0.6em 0;
+}
+
+/* ── Markdown preview ── */
+.md-preview h1 { font-size: 17px; }
+.md-preview h2 { font-size: 16px; }
+
+.md-preview code {
+  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+  font-size: 12px;
+  background: var(--bg-800);
+  padding: 1px 5px;
+  border-radius: 3px;
+  color: #a5f3fc;
+}
+
+.md-preview pre {
+  background: var(--bg-900);
+  border: 1px solid var(--border-base);
+  border-radius: 4px;
+  padding: 10px 12px;
+  overflow-x: auto;
+  margin: 0.6em 0;
+}
+
+.md-preview pre code { background: none; padding: 0; color: var(--text-primary); }
+
+.md-preview blockquote {
+  border-left: 2px solid var(--border-base);
+  padding-left: 12px;
+  margin: 0.5em 0;
+  color: var(--text-muted);
+}
+
+.md-preview a { color: var(--accent); text-decoration: underline; }
+
+.md-preview table { border-collapse: collapse; width: 100%; margin: 0.5em 0; }
+.md-preview th,
+.md-preview td { border: 1px solid var(--border-base); padding: 4px 8px; text-align: left; }
+.md-preview th { background: var(--bg-800); color: var(--text-primary); }
+
+/* ── Passcode overlay ── */
+.passcode-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-glass);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+}
+
+/* ── Pixel art panel ── */
+.pixel-art-panel {
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
+}
+
+/* ── Scene selector overlay ── */
+.scene-selector {
+  background: var(--bg-900);
+  border: 1px solid var(--border-base);
+}

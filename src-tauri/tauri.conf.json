@@ -1,0 +1,41 @@
+{
+  "productName": "SignalPad",
+  "version": "0.1.0",
+  "identifier": "com.arcollective.signalpad",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "beforeBuildCommand": "npm run build",
+    "devUrl": "http://localhost:5173",
+    "frontendDist": "../dist"
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.ico"
+    ]
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "SignalPad",
+        "width": 560,
+        "height": 660,
+        "minWidth": 560,
+        "minHeight": 660,
+        "resizable": false,
+        "decorations": false,
+        "transparent": true,
+        "center": true,
+        "shadow": true
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  }
+}

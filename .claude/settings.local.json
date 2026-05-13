@@ -1,0 +1,17 @@
+{
+  "permissions": {
+    "allow": [
+      "WebSearch",
+      "Bash(Get-ChildItem -Path \"d:\\\\MyFiles\\\\AR Collective\\\\SIGNALPAD\\\\src\" -Recurse -Include \"*.jsx\", \"*.js\")",
+      "Bash(Select-Object -ExpandProperty FullName)",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:blog.typeracer.com)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "Bash(cargo check *)",
+      "Bash(npm install *)",
+      "Bash(npm run *)",
+      "Bash(node -e ' *)",
+      "Bash(node -e \"const w = require\\('./node_modules/@tauri-apps/api/window'\\); console.log\\(Object.keys\\(w\\).filter\\(k => k.toLowerCase\\(\\).includes\\('size'\\) || k.toLowerCase\\(\\).includes\\('min'\\)\\)\\)\")"
+    ]
+  }
+}
