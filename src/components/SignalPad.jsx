@@ -489,6 +489,68 @@ function NoteCard({ note, onClick, onReveal, onContextMenu, draggable, onDragSta
   );
 }
 
+// ─── Spellcheck helpers ───────────────────────────────────────────────────────
+
+const COMMON_CORRECTIONS = {
+  "accomodate":"accommodate","acheive":"achieve","acquaintence":"acquaintance",
+  "acrage":"acreage","adn":"and","agressive":"aggressive","alot":"a lot",
+  "amature":"amateur","aparent":"apparent","arguement":"argument",
+  "athiest":"atheist","basicaly":"basically","becuase":"because",
+  "beleive":"believe","calender":"calendar","carefull":"careful",
+  "cemetary":"cemetery","changable":"changeable","cheif":"chief",
+  "colleage":"colleague","comming":"coming","commited":"committed",
+  "concious":"conscious","convience":"convenience","critisism":"criticism",
+  "definately":"definitely","desparate":"desperate","dissapear":"disappear",
+  "dissapoint":"disappoint","doesnt":"doesn't","dont":"don't",
+  "embarass":"embarrass","enviroment":"environment","existance":"existence",
+  "experiance":"experience","firey":"fiery","foriegn":"foreign",
+  "fourty":"forty","freind":"friend","futher":"further","gaurd":"guard",
+  "glamourous":"glamorous","goverment":"government","grammer":"grammar",
+  "harrass":"harass","hieght":"height","humerous":"humorous",
+  "ignorance":"ignorance","imediately":"immediately","independant":"independent",
+  "inteligent":"intelligent","intresting":"interesting","irresistable":"irresistible",
+  "its":"its","knowlege":"knowledge","labratory":"laboratory",
+  "languege":"language","lenth":"length","liason":"liaison","libary":"library",
+  "lisence":"license","maintainance":"maintenance","medeval":"medieval",
+  "memmorable":"memorable","millenium":"millennium","miniscule":"minuscule",
+  "mischevious":"mischievous","misspell":"misspell","neccessary":"necessary",
+  "negotate":"negotiate","nieghbor":"neighbor","noticable":"noticeable",
+  "occassion":"occasion","occured":"occurred","occuring":"occurring",
+  "occurance":"occurrence","ommit":"omit","oppertunity":"opportunity",
+  "oppurtunity":"opportunity","outragous":"outrageous","paralell":"parallel",
+  "parliment":"parliament","pasttime":"pastime","peice":"piece",
+  "perseverence":"perseverance","plagarism":"plagiarism","posession":"possession",
+  "potatos":"potatoes","prefered":"preferred","privelege":"privilege",
+  "probaly":"probably","pronounciation":"pronunciation","publically":"publicly",
+  "questionaire":"questionnaire","recieve":"receive","recomend":"recommend",
+  "refered":"referred","restaraunt":"restaurant","rythm":"rhythm",
+  "sacrilegious":"sacrilegious","seige":"siege","seperate":"separate",
+  "sherif":"sheriff","sieze":"seize","similer":"similar","sincerely":"sincerely",
+  "socialy":"socially","speach":"speech","succesful":"successful",
+  "supercede":"supersede","supress":"suppress","suprise":"surprise",
+  "tatoo":"tattoo","tendancy":"tendency","threshhold":"threshold",
+  "tommorow":"tomorrow","tounge":"tongue","truely":"truly","twelth":"twelfth",
+  "tyrany":"tyranny","untill":"until","usualy":"usually","vaccum":"vacuum",
+  "vegatable":"vegetable","visious":"vicious","wich":"which","wierd":"weird",
+  "whereever":"wherever","wont":"won't","writting":"writing","yesturday":"yesterday",
+};
+
+function getWordAtPoint(x, y) {
+  if (!document.caretRangeFromPoint) return { word: null, range: null };
+  const range = document.caretRangeFromPoint(x, y);
+  if (!range) return { word: null, range: null };
+  try { range.expand("word"); } catch {}
+  const word = range.toString().replace(/[^a-zA-Z''-]/g, "").trim();
+  return { word: word || null, range: word ? range : null };
+}
+
+function getSpellSuggestions(word) {
+  if (!word) return [];
+  const lower = word.toLowerCase();
+  const fix = COMMON_CORRECTIONS[lower];
+  return fix ? [fix] : [];
+}
+
 // ─── Note editor ──────────────────────────────────────────────────────────────
 
 function NoteEditor({ note, onBack, onSave, onDelete, onTogglePin, mdPreview, onMdPreviewChange, zenMode, onZenChange, onNavigate, onShowContextMenu }) {
@@ -512,16 +574,17 @@ function NoteEditor({ note, onBack, onSave, onDelete, onTogglePin, mdPreview, on
   const [showNotePasscode, setShowNotePasscode] = useState(!!notePasscodes[note.id]);
   const [showSetPasscode, setShowSetPasscode]   = useState(false);
 
-  const editorRef          = useRef(null);
-  const editorWrapperRef   = useRef(null);
-  const caretRef           = useRef(null);
-  const dirty              = useRef(false);
-  const caretBlinkTimer    = useRef(null);
-  const caretAnimFrame     = useRef(null);
-  const titleRef           = useRef(title);
-  const lastAutoContentRef = useRef(null);
-  const mountedRef         = useRef(true);
-  const overflowRef        = useRef(null);
+  const editorRef           = useRef(null);
+  const editorWrapperRef    = useRef(null);
+  const caretRef            = useRef(null);
+  const dirty               = useRef(false);
+  const caretBlinkTimer     = useRef(null);
+  const caretAnimFrame      = useRef(null);
+  const titleRef            = useRef(title);
+  const lastAutoContentRef  = useRef(null);
+  const mountedRef          = useRef(true);
+  const overflowRef         = useRef(null);
+  const lastInteractionRef  = useRef("click"); // "click" | "key"
 
   useEffect(() => { setViewMode(note.pinned); }, [note.pinned]);
 
@@ -597,15 +660,30 @@ function NoteEditor({ note, onBack, onSave, onDelete, onTogglePin, mdPreview, on
     const range = sel.getRangeAt(0).cloneRange();
     range.collapse(true);
     let rect = range.getBoundingClientRect();
+
+    // Empty-line fallback: temp zero-width span
     if (rect.height === 0) {
       const tempSpan = document.createElement("span");
       tempSpan.appendChild(document.createTextNode("​"));
       range.insertNode(tempSpan);
       rect = tempSpan.getBoundingClientRect();
-      tempSpan.parentNode.removeChild(tempSpan);
+      tempSpan.parentNode?.removeChild(tempSpan);
       sel.removeAllRanges(); sel.addRange(range);
     }
-    if (rect.height === 0) { caret.style.opacity = "0"; return; }
+
+    // Still zero — walk up to nearest block element for position
+    if (rect.height === 0) {
+      let node = sel.anchorNode;
+      if (node?.nodeType === Node.TEXT_NODE) node = node.parentElement;
+      const lineH = parseFloat(getComputedStyle(editorRef.current).lineHeight) || 21;
+      while (node && node !== editorRef.current) {
+        const pr = node.getBoundingClientRect();
+        if (pr.height > 0) { rect = { top: pr.top, left: pr.left, height: lineH }; break; }
+        node = node.parentElement;
+      }
+    }
+    if (!rect || rect.height === 0) { caret.style.opacity = "0"; return; }
+
     const wrapperRect = editorWrapperRef.current.getBoundingClientRect();
     caret.style.transition = animate ? "left 80ms ease-out, top 80ms ease-out, height 80ms ease-out" : "none";
     if (!animate) requestAnimationFrame(() => { if (caret) caret.style.transition = "left 80ms ease-out, top 80ms ease-out, height 80ms ease-out"; });
@@ -615,7 +693,9 @@ function NoteEditor({ note, onBack, onSave, onDelete, onTogglePin, mdPreview, on
     caret.style.opacity = "1";
     caret.classList.remove("smooth-caret--blinking");
     clearTimeout(caretBlinkTimer.current);
-    caretBlinkTimer.current = setTimeout(() => caret.classList.add("smooth-caret--blinking"), BLINK_RESUME_MS);
+    // Blink immediately after mouse click, pause briefly after keystrokes
+    const delay = lastInteractionRef.current === "key" ? BLINK_RESUME_MS : 0;
+    caretBlinkTimer.current = setTimeout(() => caret.classList.add("smooth-caret--blinking"), delay);
   }, []);
 
   // ── Typewriter scroll ─────────────────────────────────────────────────────
@@ -648,18 +728,24 @@ function NoteEditor({ note, onBack, onSave, onDelete, onTogglePin, mdPreview, on
       const caret = caretRef.current;
       if (caret) { caret.classList.remove("smooth-caret--blinking"); caret.style.opacity = "0"; }
     };
+    const handleMouseDown = () => { lastInteractionRef.current = "click"; };
+    const handleKeyDown   = () => { lastInteractionRef.current = "key"; };
     const ro = new ResizeObserver(coalesced(false));
     ro.observe(wrapper);
     document.addEventListener("selectionchange", handleSelectionChange);
-    editor.addEventListener("scroll", handleScroll);
-    editor.addEventListener("focus",  handleFocus);
-    editor.addEventListener("blur",   handleBlur);
+    editor.addEventListener("scroll",    handleScroll);
+    editor.addEventListener("focus",     handleFocus);
+    editor.addEventListener("blur",      handleBlur);
+    editor.addEventListener("mousedown", handleMouseDown);
+    editor.addEventListener("keydown",   handleKeyDown);
     if (document.activeElement === editor) updateCaretPosition(false);
     return () => {
       document.removeEventListener("selectionchange", handleSelectionChange);
-      editor.removeEventListener("scroll", handleScroll);
-      editor.removeEventListener("focus", handleFocus);
-      editor.removeEventListener("blur", handleBlur);
+      editor.removeEventListener("scroll",    handleScroll);
+      editor.removeEventListener("focus",     handleFocus);
+      editor.removeEventListener("blur",      handleBlur);
+      editor.removeEventListener("mousedown", handleMouseDown);
+      editor.removeEventListener("keydown",   handleKeyDown);
       ro.disconnect();
       cancelAnimationFrame(caretAnimFrame.current);
       clearTimeout(caretBlinkTimer.current);
@@ -787,9 +873,29 @@ function NoteEditor({ note, onBack, onSave, onDelete, onTogglePin, mdPreview, on
   const handleEditorContextMenu = (e) => {
     e.preventDefault();
     const hasSelection = !!window.getSelection()?.toString();
+    const { word, range: wordRange } = getWordAtPoint(e.clientX, e.clientY);
+    const suggestions = spellcheck ? getSpellSuggestions(word) : [];
+
+    const applyCorrection = (correction) => {
+      if (!wordRange || !editorRef.current) return;
+      editorRef.current.focus();
+      const sel = window.getSelection();
+      sel.removeAllRanges();
+      sel.addRange(wordRange);
+      document.execCommand("insertText", false, correction);
+    };
+
     onShowContextMenu({
       x: e.clientX, y: e.clientY,
       items: [
+        // Spell suggestions at the top when available
+        ...(suggestions.length > 0 ? [
+          ...suggestions.map(s => ({
+            label: s,
+            action: () => applyCorrection(s),
+          })),
+          { separator: true },
+        ] : []),
         ...(hasSelection ? [
           { icon: <Scissors size={11} />, label: "Cut",  shortcut: "Ctrl+X", action: () => document.execCommand("cut") },
           { icon: <Copy size={11} />,     label: "Copy", shortcut: "Ctrl+C", action: () => document.execCommand("copy") },
