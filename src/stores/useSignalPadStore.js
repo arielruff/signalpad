@@ -50,6 +50,7 @@ function serializeNote(note) {
   if (note.emoji) lines.push(`emoji: ${JSON.stringify(note.emoji)}`);
   if (note.color) lines.push(`color: ${JSON.stringify(note.color)}`);
   if (note.burn) lines.push(`burn: true`);
+  if (note.scratch) lines.push(`scratch: ${JSON.stringify(note.scratch)}`);
   lines.push("---", note.content || "");
   return lines.join("\n");
 }
@@ -136,6 +137,16 @@ function loadSpellcheck() {
   return localStorage.getItem("sp-spellcheck") !== "false";
 }
 
+function loadCardScenesEnabled() { return localStorage.getItem("sp-card-scenes") !== "false"; }
+function loadCardDensity() { const v = localStorage.getItem("sp-card-density"); return (v === "compact" || v === "spacious") ? v : "default"; }
+function loadAccentColor() { return localStorage.getItem("sp-accent-color") || null; }
+function loadAutoLockMinutes() { const v = Number(localStorage.getItem("sp-auto-lock")); return [5, 15, 30, 60].includes(v) ? v : 0; }
+function loadAutoBackupSchedule() { const v = localStorage.getItem("sp-auto-backup"); return (v === "onclose" || v === "hourly" || v === "daily") ? v : "manual"; }
+function loadNoteCap() { const v = Number(localStorage.getItem("sp-note-cap")); return v > 0 ? v : (v === 0 ? 0 : 10); }
+function loadDefaultTemplate() { return localStorage.getItem("sp-default-template") || ""; }
+function loadSpellcheckLang() { return localStorage.getItem("sp-spellcheck-lang") || "en-US"; }
+function loadAutoSaveDelay() { const v = Number(localStorage.getItem("sp-autosave-delay")); return [0, 500, 1000, 2000].includes(v) ? v : 1000; }
+
 const TOOLBAR_VISIBLE_DEFAULTS = ["emoji", "color", "mdpreview", "pin", "history"];
 function loadToolbarVisible() {
   try {
@@ -166,6 +177,15 @@ export const useSignalPadStore = create((set, get) => ({
   notePasscodes: loadNotePasscodes(),
   cloudBackupPath: loadCloudBackupPath(),
   spellcheck: loadSpellcheck(),
+  cardScenesEnabled: loadCardScenesEnabled(),
+  cardDensity: loadCardDensity(),
+  accentColor: loadAccentColor(),
+  autoLockMinutes: loadAutoLockMinutes(),
+  autoBackupSchedule: loadAutoBackupSchedule(),
+  noteCap: loadNoteCap(),
+  defaultTemplate: loadDefaultTemplate(),
+  spellcheckLang: loadSpellcheckLang(),
+  autoSaveDelay: loadAutoSaveDelay(),
   loading: true,
 
   init: async () => {
@@ -197,12 +217,15 @@ export const useSignalPadStore = create((set, get) => ({
 
   canAdd: () => true,
 
-  addNote: async () => {
-    const { saveFormat } = get();
+  addNote: async (initialContent) => {
+    const { saveFormat, defaultTemplate } = get();
     const fileExt = saveFormat === "ask" ? "md" : saveFormat;
     const id = makeId();
     const now = new Date().toISOString();
-    const note = { id, title: "", content: "", pinned: false, createdAt: now, updatedAt: now, fileExt };
+    const rawTemplate = defaultTemplate || "";
+    const content = initialContent !== undefined ? initialContent
+      : rawTemplate ? rawTemplate.split("\n").map(l => l.trim() ? `<p>${escapeHtml(l)}</p>` : "").join("") : "";
+    const note = { id, title: "", content, pinned: false, createdAt: now, updatedAt: now, fileExt };
     const dir = await getNotesDir();
     await invoke("write_file", { path: joinPath(dir, `${id}.${fileExt}`), content: serializeNote(note) });
     set((s) => {
@@ -455,6 +478,27 @@ export const useSignalPadStore = create((set, get) => ({
     return id;
   },
 
+  importDocxNote: async (filePath) => {
+    const bytes = await invoke("read_file_bytes", { path: filePath });
+    const uint8 = new Uint8Array(bytes);
+    const mammoth = await import("mammoth").then(m => m.default ?? m);
+    const result = await mammoth.convertToHtml({ arrayBuffer: uint8.buffer });
+    const html = result.value || "";
+    const fileName = filePath.replace(/\\/g, "/").split("/").pop() ?? "Imported Document";
+    const title = fileName.replace(/\.docx$/i, "");
+    const id = makeId();
+    const now = new Date().toISOString();
+    const note = { id, title, content: html, pinned: false, createdAt: now, updatedAt: now, fileExt: "md" };
+    const dir = await getNotesDir();
+    await invoke("write_file", { path: joinPath(dir, `${id}.md`), content: serializeNote(note) });
+    set((s) => {
+      const noteOrder = [id, ...s.noteOrder];
+      saveNoteOrder(noteOrder);
+      return { notes: [note, ...s.notes], noteOrder };
+    });
+    return id;
+  },
+
   saveNoteTo: async (id, path, changes) => {
     const note = get().notes.find((n) => n.id === id);
     if (!note) return;
@@ -506,6 +550,17 @@ export const useSignalPadStore = create((set, get) => ({
     localStorage.setItem("sp-spellcheck", enabled ? "true" : "false");
     set({ spellcheck: enabled });
   },
+
+  // ── New settings ──────────────────────────────────────────────────────────
+  setCardScenesEnabled: (v) => { localStorage.setItem("sp-card-scenes", v ? "true" : "false"); set({ cardScenesEnabled: v }); },
+  setCardDensity: (v) => { localStorage.setItem("sp-card-density", v); set({ cardDensity: v }); },
+  setAccentColor: (v) => { if (v) localStorage.setItem("sp-accent-color", v); else localStorage.removeItem("sp-accent-color"); set({ accentColor: v || null }); },
+  setAutoLockMinutes: (v) => { localStorage.setItem("sp-auto-lock", String(v)); set({ autoLockMinutes: v }); },
+  setAutoBackupSchedule: (v) => { localStorage.setItem("sp-auto-backup", v); set({ autoBackupSchedule: v }); },
+  setNoteCap: (v) => { localStorage.setItem("sp-note-cap", String(v)); set({ noteCap: v }); },
+  setDefaultTemplate: (v) => { localStorage.setItem("sp-default-template", v); set({ defaultTemplate: v }); },
+  setSpellcheckLang: (v) => { localStorage.setItem("sp-spellcheck-lang", v); set({ spellcheckLang: v }); },
+  setAutoSaveDelay: (v) => { localStorage.setItem("sp-autosave-delay", String(v)); set({ autoSaveDelay: v }); },
 
   // ── Cloud backup (copy all notes to backup folder) ────────────────────────
   runCloudBackup: async () => {

@@ -119,15 +119,15 @@ export default function AmbientSound() {
   useEffect(() => () => stop(), []);
 
   return (
-    <div className="relative">
+    <div className="relative inline-flex items-center">
       <button
         onClick={() => setOpen((o) => !o)}
         title="Ambient sound"
-        className={`w-6 h-6 flex items-center justify-center rounded transition-colors ${
-          active ? "text-cyan-400 bg-cyan-500/15" : "text-zinc-600 hover:text-zinc-300 hover:bg-zinc-700/50"
+        className={`w-7 h-7 flex items-center justify-center rounded transition-colors ${
+          active ? "text-cyan-400 bg-cyan-500/15" : "text-zinc-600 hover:text-zinc-300 hover:bg-zinc-700"
         }`}
       >
-        {active ? <Volume2 size={12} /> : <VolumeX size={12} />}
+        {active ? <Volume2 size={14} /> : <VolumeX size={14} />}
       </button>
 
       {open && (

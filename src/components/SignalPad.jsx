@@ -6,10 +6,10 @@ import {
   Heading2, BookOpen, NotebookPen, Type, ChevronDown, Settings, Download, FolderOpen,
   FileText, Upload, Camera, Flame, Maximize2, Minimize2, Copy, GripVertical,
   Hash, AlignCenter, History, Smile, HelpCircle, Star, MoreHorizontal, Scissors,
-  CheckSquare, Lock, Sun, Moon, Palette, Cloud, CloudOff,
+  CheckSquare, Lock, Palette, Table2, BookMarked, Crosshair,
 } from "lucide-react";
 import { SceneCanvas, SCENES } from "./PixelArtScene";
-import PasscodeModal, { checkPasscode, storePasscode } from "./PasscodeModal";
+import PasscodeModal from "./PasscodeModal";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { LogicalSize } from "@tauri-apps/api/dpi";
 import { invoke } from "@tauri-apps/api/core";
@@ -31,17 +31,19 @@ const td = new TurndownService({ headingStyle: "atx", bulletListMarker: "-" });
 
 // ─── Google Fonts ─────────────────────────────────────────────────────────────
 
-export const TOOLBAR_ICON_CONFIG = [
-  { id: "emoji",      label: "Emoji picker"       },
-  { id: "color",      label: "Color tint"         },
-  { id: "typewriter", label: "Typewriter mode"    },
-  { id: "mdpreview",  label: "Markdown preview"   },
-  { id: "pin",        label: "Pin"                },
-  { id: "burn",       label: "Burn after reading" },
-  { id: "copymd",     label: "Copy as Markdown"   },
-  { id: "snapshot",   label: "Snapshot"           },
-  { id: "history",    label: "Snapshot history"   },
-  { id: "zen",        label: "Zen mode"           },
+const TOOLBAR_ICON_CONFIG = [
+  { id: "emoji", label: "Emoji picker" },
+  { id: "color", label: "Color tint" },
+  { id: "typewriter", label: "Typewriter mode" },
+  { id: "focusmode", label: "Paragraph focus" },
+  { id: "scratch", label: "Research notes" },
+  { id: "mdpreview", label: "Markdown preview" },
+  { id: "pin", label: "Pin" },
+  { id: "burn", label: "Burn after reading" },
+  { id: "copymd", label: "Copy as Markdown" },
+  { id: "snapshot", label: "Snapshot" },
+  { id: "history", label: "Snapshot history" },
+  { id: "zen", label: "Zen mode" },
 ];
 
 const GOOGLE_FONTS = [
@@ -82,9 +84,9 @@ const COLOR_PRESETS = [
 ];
 
 const EMOJI_LIST = [
-  "📝","💡","🔥","⭐","📚","🎯","💪","🎨","🌙","☀️",
-  "🏆","🔮","💬","🎵","🌿","⚡","🛠️","🎲","🌊","🔑",
-  "💎","🦋","🐉","🌈","📌","💼","🏠","🌺","🤖","🧠",
+  "📝", "💡", "🔥", "⭐", "📚", "🎯", "💪", "🎨", "🌙", "☀️",
+  "🏆", "🔮", "💬", "🎵", "🌿", "⚡", "🛠️", "🎲", "🌊", "🔑",
+  "💎", "🦋", "🐉", "🌈", "📌", "💼", "🏠", "🌺", "🤖", "🧠",
 ];
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -121,6 +123,59 @@ function processWikiLinks(html) {
     const safe = title.replace(/"/g, "&quot;");
     return `<span class="wiki-link" data-wikilink="${encodeURIComponent(title)}">«${safe}»</span>`;
   });
+}
+
+// ─── DOCX export helper ───────────────────────────────────────────────────────
+
+function htmlToDocxElements(html, { Paragraph, TextRun, HeadingLevel, Table, TableRow, TableCell, WidthType }) {
+  const container = document.createElement("div");
+  container.innerHTML = html || "";
+
+  function textRuns(el) {
+    const runs = [];
+    function walk(node, b = false, i = false, u = false, s = false) {
+      if (node.nodeType === Node.TEXT_NODE) {
+        const text = node.textContent;
+        if (text) runs.push(new TextRun({ text, bold: b, italics: i, underline: u ? {} : undefined, strike: s }));
+      } else if (node.nodeType === Node.ELEMENT_NODE) {
+        const t = node.tagName;
+        for (const c of node.childNodes)
+          walk(c, b || t === "STRONG" || t === "B", i || t === "EM" || t === "I",
+            u || t === "U", s || t === "S" || t === "STRIKE" || t === "DEL");
+      }
+    }
+    walk(el);
+    return runs.length ? runs : [new TextRun("")];
+  }
+
+  const elements = [];
+  for (const child of container.children) {
+    const t = child.tagName;
+    if (t === "H1") elements.push(new Paragraph({ heading: HeadingLevel.HEADING_1, children: textRuns(child) }));
+    else if (t === "H2") elements.push(new Paragraph({ heading: HeadingLevel.HEADING_2, children: textRuns(child) }));
+    else if (t === "H3") elements.push(new Paragraph({ heading: HeadingLevel.HEADING_3, children: textRuns(child) }));
+    else if (t === "UL") {
+      for (const li of child.querySelectorAll("li"))
+        elements.push(new Paragraph({ bullet: { level: 0 }, children: textRuns(li) }));
+    } else if (t === "OL") {
+      let n = 1;
+      for (const li of child.querySelectorAll("li"))
+        elements.push(new Paragraph({ children: [new TextRun(`${n++}. `), ...textRuns(li)] }));
+    } else if (t === "TABLE") {
+      const rows = [];
+      for (const tr of child.querySelectorAll("tr")) {
+        const cells = [];
+        for (const td of tr.querySelectorAll("td,th"))
+          cells.push(new TableCell({ children: [new Paragraph({ children: textRuns(td) })] }));
+        if (cells.length) rows.push(new TableRow({ children: cells }));
+      }
+      if (rows.length) elements.push(new Table({ rows, width: { size: 100, type: WidthType.PERCENTAGE } }));
+    } else {
+      const runs = textRuns(child);
+      if (runs.length) elements.push(new Paragraph({ children: runs }));
+    }
+  }
+  return elements.length ? elements : [new Paragraph({ children: [new TextRun("")] })];
 }
 
 // ─── Font dropdown ────────────────────────────────────────────────────────────
@@ -165,7 +220,7 @@ function FontDropdown({ onSelect, onBrowse }) {
       </div>
       <div className="border-t border-zinc-800 p-1.5">
         <button onMouseDown={(e) => { e.preventDefault(); onBrowse(); }}
-          className="w-full flex items-center gap-2 px-3 py-1.5 rounded text-[11px] text-zinc-400 hover:text-cyan-400 hover:bg-cyan-500/10 transition-colors">
+          className="w-full flex items-center gap-2 px-3 py-1.5 rounded text-[11px] text-zinc-400 hover:text-zinc-100 hover:bg-zinc-500/10 transition-colors">
           <Plus size={10} /> Browse Google Fonts
         </button>
       </div>
@@ -269,28 +324,35 @@ function FormatToolbar({ editorRef }) {
     document.execCommand("insertHTML", false, html);
   };
 
+  const insertTable = () => {
+    editorRef.current?.focus();
+    const html = `<table class="sp-table"><tbody><tr><th>&nbsp;</th><th>&nbsp;</th><th>&nbsp;</th></tr><tr><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td></tr><tr><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td></tr></tbody></table><p><br></p>`;
+    document.execCommand("insertHTML", false, html);
+  };
+
   return (
     <div ref={containerRef} className="relative shrink-0">
       <div className="flex items-center gap-0.5 px-2 py-1 border-b border-zinc-700 bg-zinc-950 overflow-x-auto">
         {/* Font controls FIRST */}
         <button title="Font" onMouseDown={(e) => { e.preventDefault(); if (fontActive) { closeAll(); return; } saveSelection(); setShowFontDropdown(true); setShowSizePicker(false); }}
-          className={`px-1.5 py-1 rounded text-[10px] transition-colors flex items-center gap-0.5 ${fontActive ? "text-cyan-400 bg-zinc-700" : "text-zinc-400 hover:text-white hover:bg-zinc-700"}`}>
+          className={`px-1.5 py-1 rounded text-[10px] transition-colors flex items-center gap-0.5 ${fontActive ? "text-zinc-100 bg-zinc-700" : "text-zinc-400 hover:text-white hover:bg-zinc-700"}`}>
           <Type size={11} /><ChevronDown size={8} />
         </button>
         <button title="Font size" onMouseDown={(e) => { e.preventDefault(); setShowFontDropdown(false); setShowFontBrowser(false); setShowSizePicker((p) => !p); }}
-            className={`px-1.5 py-1 rounded text-[10px] font-mono transition-colors min-w-[26px] text-center ${showSizePicker ? "text-cyan-400 bg-zinc-700" : "text-zinc-400 hover:text-white hover:bg-zinc-700"}`}>
-            {currentSize}
-          </button>
+          className={`px-1.5 py-1 rounded text-[10px] font-mono transition-colors min-w-[26px] text-center ${showSizePicker ? "text-zinc-100 bg-zinc-700" : "text-zinc-400 hover:text-white hover:bg-zinc-700"}`}>
+          {currentSize}
+        </button>
         <div className="w-px h-4 bg-zinc-700 mx-1" />
-        <ToolbarBtn title="Bold (Ctrl+B)" onClick={() => cmd("bold")}><Bold size={11} /></ToolbarBtn>
-        <ToolbarBtn title="Italic (Ctrl+I)" onClick={() => cmd("italic")}><Italic size={11} /></ToolbarBtn>
-        <ToolbarBtn title="Underline (Ctrl+U)" onClick={() => cmd("underline")}><Underline size={11} /></ToolbarBtn>
-        <ToolbarBtn title="Strikethrough" onClick={() => cmd("strikethrough")}><Strikethrough size={11} /></ToolbarBtn>
+        <ToolbarBtn title="Bold (Ctrl+B)" onClick={() => cmd("bold")}><Bold size={13} /></ToolbarBtn>
+        <ToolbarBtn title="Italic (Ctrl+I)" onClick={() => cmd("italic")}><Italic size={13} /></ToolbarBtn>
+        <ToolbarBtn title="Underline (Ctrl+U)" onClick={() => cmd("underline")}><Underline size={13} /></ToolbarBtn>
+        <ToolbarBtn title="Strikethrough" onClick={() => cmd("strikethrough")}><Strikethrough size={13} /></ToolbarBtn>
         <div className="w-px h-4 bg-zinc-700 mx-1" />
-        <ToolbarBtn title="Heading" onClick={() => cmd("formatBlock", "<h3>")}><Heading2 size={11} /></ToolbarBtn>
-        <ToolbarBtn title="Bullet list" onClick={() => cmd("insertUnorderedList")}><List size={11} /></ToolbarBtn>
-        <ToolbarBtn title="Numbered list" onClick={() => cmd("insertOrderedList")}><ListOrdered size={11} /></ToolbarBtn>
-        <ToolbarBtn title="Checklist" onClick={insertChecklist}><CheckSquare size={11} /></ToolbarBtn>
+        <ToolbarBtn title="Heading" onClick={() => cmd("formatBlock", "<h3>")}><Heading2 size={13} /></ToolbarBtn>
+        <ToolbarBtn title="Bullet list" onClick={() => cmd("insertUnorderedList")}><List size={13} /></ToolbarBtn>
+        <ToolbarBtn title="Numbered list" onClick={() => cmd("insertOrderedList")}><ListOrdered size={13} /></ToolbarBtn>
+        <ToolbarBtn title="Checklist" onClick={insertChecklist}><CheckSquare size={13} /></ToolbarBtn>
+        <ToolbarBtn title="Insert table" onClick={insertTable}><Table2 size={13} /></ToolbarBtn>
         <div className="w-px h-4 bg-zinc-700 mx-1" />
         <ToolbarBtn title="Divider" onClick={() => cmd("insertHorizontalRule")}><Minus size={11} /></ToolbarBtn>
         <ToolbarBtn title="Clear formatting" onClick={() => cmd("removeFormat")}><span className="text-[9px]">Tx</span></ToolbarBtn>
@@ -301,7 +363,7 @@ function FormatToolbar({ editorRef }) {
         <div className="absolute top-full right-0 z-50 mt-0.5 bg-zinc-950 border border-zinc-700 rounded shadow-xl overflow-hidden min-w-[44px]">
           {FONT_SIZES.map((s) => (
             <button key={s} onMouseDown={(e) => { e.preventDefault(); setCurrentSize(s); applyFontSize(`${s}px`); setShowSizePicker(false); }}
-              className={`block w-full text-right px-3 py-1 text-[11px] font-mono transition-colors ${currentSize === s ? "text-cyan-400 bg-cyan-950" : "text-zinc-300 hover:bg-zinc-700 hover:text-white"}`}>{s}</button>
+              className={`block w-full text-right px-3 py-1 text-[11px] font-mono transition-colors ${currentSize === s ? "text-zinc-100 bg-zinc-950" : "text-zinc-300 hover:bg-zinc-700 hover:text-white"}`}>{s}</button>
           ))}
         </div>
       )}
@@ -313,7 +375,7 @@ function FormatToolbar({ editorRef }) {
 
 function PinBadge() {
   return (
-    <span className="inline-flex items-center gap-1 text-[8px] font-bold tracking-widest uppercase px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-400 border border-amber-800">
+    <span className="inline-flex items-center gap-1 text-[8px] font-bold tracking-widest uppercase px-1.5 py-0.5 rounded border pinned-badge">
       <Pin size={7} /> Pinned
     </span>
   );
@@ -394,15 +456,15 @@ function CardScenePicker({ sceneId, onSelect, onClose, anchorRef }) {
       </div>
       <div className="overflow-y-auto max-h-[240px] p-1">
         <button onClick={() => { onSelect(null); onClose(); }}
-          className={`w-full text-left px-2 py-1 rounded text-[10px] transition-colors mb-0.5 ${!sceneId ? "bg-cyan-500/20 text-cyan-300" : "text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200"}`}>
+          className={`w-full text-left px-2 py-1 rounded text-[10px] transition-colors mb-0.5 ${!sceneId ? "bg-zinc-500/20 text-zinc-300" : "text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200"}`}>
           Document snapshot
         </button>
-        {["Weather","Scenes"].map(cat => (
+        {["Weather", "Scenes"].map(cat => (
           <div key={cat}>
             <div className="px-2 pt-1.5 pb-0.5 text-[8px] font-bold uppercase tracking-widest text-zinc-600">{cat}</div>
             {SCENES.filter(s => s.category === cat).map(s => (
               <button key={s.id} onClick={() => { onSelect(s.id); onClose(); }}
-                className={`w-full text-left px-2 py-1 rounded text-[10px] transition-colors ${sceneId === s.id ? "bg-cyan-500/20 text-cyan-300" : "text-zinc-500 hover:bg-zinc-800 hover:text-zinc-300"}`}>
+                className={`w-full text-left px-2 py-1 rounded text-[10px] transition-colors ${sceneId === s.id ? "bg-zinc-500/20 text-zinc-300" : "text-zinc-500 hover:bg-zinc-800 hover:text-zinc-300"}`}>
                 {s.label}
               </button>
             ))}
@@ -414,7 +476,7 @@ function CardScenePicker({ sceneId, onSelect, onClose, anchorRef }) {
   );
 }
 
-function NoteCard({ note, onClick, onReveal, onContextMenu, draggable, onDragStart, onDragOver, onDrop, dragOver, sceneId, onSetScene }) {
+function NoteCard({ note, onClick, onReveal, onContextMenu, draggable, onGripPointerDown, dragOver, isDragging, sceneId, onSetScene, cardScenesEnabled, density }) {
   const [showPicker, setShowPicker] = useState(false);
   const pickerBtnRef = useRef(null);
 
@@ -425,67 +487,78 @@ function NoteCard({ note, onClick, onReveal, onContextMenu, draggable, onDragSta
   return (
     <div
       onContextMenu={onContextMenu}
-      draggable={draggable}
-      onDragStart={onDragStart}
-      onDragOver={onDragOver}
-      onDrop={onDrop}
+      data-note-id={note.id}
       style={cardStyle}
-      className={`group w-full flex flex-row rounded-lg border transition-all duration-150 cursor-pointer overflow-hidden h-[76px]
-        ${dragOver ? "ring-1 ring-cyan-400/50" : ""}
+      className={`group w-full flex flex-col rounded-lg border transition-all duration-150 cursor-pointer overflow-hidden
+        ${isDragging ? "opacity-40 scale-[0.98]" : ""}
+        ${dragOver ? "ring-2 ring-zinc-400/70 ring-offset-1 ring-offset-transparent" : ""}
         ${note.pinned && !note.color
-          ? "border-amber-800 bg-amber-500/[0.04] hover:bg-amber-500/[0.08]"
+          ? "pinned-card"
           : !note.color
-          ? "border-zinc-700 bg-zinc-900/40 hover:bg-zinc-800 hover:border-zinc-600/60"
-          : "hover:brightness-110"
+            ? "border-zinc-700 bg-zinc-900/40 hover:bg-zinc-800 hover:border-zinc-600/60"
+            : "hover:brightness-110"
         }`}
     >
-      {/* Left: note info (1/4) */}
-      <div className="w-1/4 min-w-0 px-2.5 py-2.5 flex flex-col justify-between" onClick={onClick}>
-        <div>
-          <div className="flex items-start justify-between gap-1 mb-1">
-            <span className={`text-[12px] font-semibold leading-tight truncate ${note.pinned ? "text-amber-100" : "text-zinc-100"}`}>
-              {note.emoji && <span className="mr-1.5">{note.emoji}</span>}
-              {note.title || "Untitled"}
+      {/* Title bar */}
+      <div
+        className={`flex items-center gap-1.5 px-2.5 py-[6px] border-b shrink-0
+          ${note.pinned && !note.color ? "pinned-header" : "border-zinc-800 bg-zinc-900/60"}`}
+        onClick={onClick}
+      >
+        {note.emoji && <span className="text-[11px] leading-none">{note.emoji}</span>}
+        <span className="flex items-baseline gap-1 flex-1 min-w-0">
+          <span className={`text-[11px] font-semibold leading-none truncate ${note.pinned ? "pinned-title" : "text-zinc-100"}`}>
+            {note.title || "Untitled"}
+          </span>
+          <span className={`text-[11px] font-mono leading-none shrink-0 ${note.pinned ? "pinned-title-dim" : "text-zinc-400"}`}>.{note.fileExt || "md"}</span>
+        </span>
+        <div className="flex items-center gap-1 shrink-0">
+          {note.burn && <Flame size={11} className="text-orange-400/70" />}
+          {note.pinned && <PinBadge />}
+          {draggable && (
+            <span
+              className="opacity-0 group-hover:opacity-100 transition-opacity text-zinc-500 cursor-grab active:cursor-grabbing select-none"
+              onPointerDown={(e) => { e.stopPropagation(); e.preventDefault(); onGripPointerDown?.(e, note.id); }}
+            >
+              <GripVertical size={13} />
             </span>
-            <div className="flex items-center gap-1 shrink-0">
-              {note.burn && <Flame size={9} className="text-orange-400/70" />}
-              {note.pinned && <PinBadge />}
-              {draggable && (
-                <span className="opacity-0 group-hover:opacity-100 transition-opacity text-zinc-700 cursor-grab">
-                  <GripVertical size={11} />
-                </span>
-              )}
-              <button onClick={(e) => { e.stopPropagation(); onReveal(); }} title="Show in folder"
-                className="opacity-0 group-hover:opacity-100 transition-opacity p-0.5 rounded text-zinc-600 hover:text-zinc-300 hover:bg-zinc-700">
-                <FolderOpen size={11} />
-              </button>
-            </div>
-          </div>
-          <p className="text-[10px] text-zinc-500 leading-relaxed line-clamp-2">{notePreview(note.content)}</p>
+          )}
+          <button onClick={(e) => { e.stopPropagation(); onReveal(); }} title="Show in folder"
+            className="opacity-0 group-hover:opacity-100 transition-opacity p-0.5 rounded text-zinc-600 hover:text-zinc-300 hover:bg-zinc-700">
+            <FolderOpen size={13} />
+          </button>
         </div>
-        <p className="text-[9px] text-zinc-700 mt-1">{fmtDate(note.updatedAt)}</p>
       </div>
 
-      {/* Right: pixel art panel (3/4) */}
-      <div className="w-3/4 shrink-0 relative border-l border-zinc-800 overflow-hidden">
-        <SceneCanvas sceneId={sceneId} noteContent={note.content} />
-        {/* choose scene button — appears on hover */}
-        <button
-          ref={pickerBtnRef}
-          onClick={(e) => { e.stopPropagation(); setShowPicker(s => !s); }}
-          title="Choose scene"
-          className="absolute bottom-1 right-1 opacity-0 group-hover:opacity-100 transition-opacity p-0.5 rounded bg-zinc-900/80 text-zinc-500 hover:text-zinc-200"
-        >
-          <ChevronDown size={9} />
-        </button>
-        {showPicker && (
-          <CardScenePicker
-            sceneId={sceneId}
-            anchorRef={pickerBtnRef}
-            onSelect={(id) => { onSetScene(note.id, id); setShowPicker(false); }}
-            onClose={() => setShowPicker(false)}
-          />
-        )}
+      {/* Content row */}
+      <div className={`flex flex-row flex-1 min-h-0 ${density === "compact" ? "h-[48px]" : density === "spacious" ? "h-[92px]" : "h-[72px]"}`}>
+        {/* Left: note meta */}
+        <div className={`${cardScenesEnabled ? "w-1/4" : "w-full"} min-w-0 px-2.5 py-2 flex flex-col justify-between`} onClick={onClick}>
+          <p className={`text-[10px] text-zinc-500 leading-relaxed ${density === "spacious" ? "line-clamp-4" : "line-clamp-2"}`}>{notePreview(note.content)}</p>
+          <p className="text-[9px] text-zinc-700">{fmtDate(note.updatedAt)}</p>
+        </div>
+
+        {/* Right: pixel art panel (3/4) — hidden when scenes disabled */}
+        {cardScenesEnabled && <div className="w-3/4 shrink-0 relative border-l border-zinc-800 overflow-hidden">
+          <SceneCanvas sceneId={sceneId} noteContent={note.content} />
+          {/* choose scene button — appears on hover */}
+          <button
+            ref={pickerBtnRef}
+            onClick={(e) => { e.stopPropagation(); setShowPicker(s => !s); }}
+            title="Choose scene"
+            className="absolute bottom-1 right-1 opacity-0 group-hover:opacity-100 transition-opacity p-0.5 rounded bg-zinc-900/80 text-zinc-500 hover:text-zinc-200"
+          >
+            <ChevronDown size={9} />
+          </button>
+          {showPicker && (
+            <CardScenePicker
+              sceneId={sceneId}
+              anchorRef={pickerBtnRef}
+              onSelect={(id) => { onSetScene(note.id, id); setShowPicker(false); }}
+              onClose={() => setShowPicker(false)}
+            />
+          )}
+        </div>}
       </div>
     </div>
   );
@@ -494,101 +567,240 @@ function NoteCard({ note, onClick, onReveal, onContextMenu, draggable, onDragSta
 // ─── Spellcheck helpers ───────────────────────────────────────────────────────
 
 const COMMON_CORRECTIONS = {
-  "accomodate":"accommodate","acheive":"achieve","acquaintence":"acquaintance",
-  "acrage":"acreage","adn":"and","agressive":"aggressive","alot":"a lot",
-  "amature":"amateur","aparent":"apparent","arguement":"argument",
-  "athiest":"atheist","basicaly":"basically","becuase":"because",
-  "beleive":"believe","calender":"calendar","carefull":"careful",
-  "cemetary":"cemetery","changable":"changeable","cheif":"chief",
-  "colleage":"colleague","comming":"coming","commited":"committed",
-  "concious":"conscious","convience":"convenience","critisism":"criticism",
-  "definately":"definitely","desparate":"desperate","dissapear":"disappear",
-  "dissapoint":"disappoint","doesnt":"doesn't","dont":"don't",
-  "embarass":"embarrass","enviroment":"environment","existance":"existence",
-  "experiance":"experience","firey":"fiery","foriegn":"foreign",
-  "fourty":"forty","freind":"friend","futher":"further","gaurd":"guard",
-  "glamourous":"glamorous","goverment":"government","grammer":"grammar",
-  "harrass":"harass","hieght":"height","humerous":"humorous",
-  "ignorance":"ignorance","imediately":"immediately","independant":"independent",
-  "inteligent":"intelligent","intresting":"interesting","irresistable":"irresistible",
-  "its":"its","knowlege":"knowledge","labratory":"laboratory",
-  "languege":"language","lenth":"length","liason":"liaison","libary":"library",
-  "lisence":"license","maintainance":"maintenance","medeval":"medieval",
-  "memmorable":"memorable","millenium":"millennium","miniscule":"minuscule",
-  "mischevious":"mischievous","misspell":"misspell","neccessary":"necessary",
-  "negotate":"negotiate","nieghbor":"neighbor","noticable":"noticeable",
-  "occassion":"occasion","occured":"occurred","occuring":"occurring",
-  "occurance":"occurrence","ommit":"omit","oppertunity":"opportunity",
-  "oppurtunity":"opportunity","outragous":"outrageous","paralell":"parallel",
-  "parliment":"parliament","pasttime":"pastime","peice":"piece",
-  "perseverence":"perseverance","plagarism":"plagiarism","posession":"possession",
-  "potatos":"potatoes","prefered":"preferred","privelege":"privilege",
-  "probaly":"probably","pronounciation":"pronunciation","publically":"publicly",
-  "questionaire":"questionnaire","recieve":"receive","recomend":"recommend",
-  "refered":"referred","restaraunt":"restaurant","rythm":"rhythm",
-  "sacrilegious":"sacrilegious","seige":"siege","seperate":"separate",
-  "sherif":"sheriff","sieze":"seize","similer":"similar","sincerely":"sincerely",
-  "socialy":"socially","speach":"speech","succesful":"successful",
-  "supercede":"supersede","supress":"suppress","suprise":"surprise",
-  "tatoo":"tattoo","tendancy":"tendency","threshhold":"threshold",
-  "tommorow":"tomorrow","tounge":"tongue","truely":"truly","twelth":"twelfth",
-  "tyrany":"tyranny","untill":"until","usualy":"usually","vaccum":"vacuum",
-  "vegatable":"vegetable","visious":"vicious","wich":"which","wierd":"weird",
-  "whereever":"wherever","wont":"won't","writting":"writing","yesturday":"yesterday",
+  "accomodate": "accommodate", "acheive": "achieve", "acquaintence": "acquaintance",
+  "acrage": "acreage", "adn": "and", "agressive": "aggressive", "alot": "a lot",
+  "amature": "amateur", "aparent": "apparent", "arguement": "argument",
+  "athiest": "atheist", "basicaly": "basically", "becuase": "because",
+  "beleive": "believe", "calender": "calendar", "carefull": "careful",
+  "cemetary": "cemetery", "changable": "changeable", "cheif": "chief",
+  "colleage": "colleague", "comming": "coming", "commited": "committed",
+  "concious": "conscious", "convience": "convenience", "critisism": "criticism",
+  "definately": "definitely", "desparate": "desperate", "dissapear": "disappear",
+  "dissapoint": "disappoint", "doesnt": "doesn't", "dont": "don't",
+  "embarass": "embarrass", "enviroment": "environment", "existance": "existence",
+  "experiance": "experience", "firey": "fiery", "foriegn": "foreign",
+  "fourty": "forty", "freind": "friend", "futher": "further", "gaurd": "guard",
+  "glamourous": "glamorous", "goverment": "government", "grammer": "grammar",
+  "harrass": "harass", "hieght": "height", "humerous": "humorous",
+  "ignorance": "ignorance", "imediately": "immediately", "independant": "independent",
+  "inteligent": "intelligent", "intresting": "interesting", "irresistable": "irresistible",
+  "its": "its", "knowlege": "knowledge", "labratory": "laboratory",
+  "languege": "language", "lenth": "length", "liason": "liaison", "libary": "library",
+  "lisence": "license", "maintainance": "maintenance", "medeval": "medieval",
+  "memmorable": "memorable", "millenium": "millennium", "miniscule": "minuscule",
+  "mischevious": "mischievous", "misspell": "misspell", "neccessary": "necessary",
+  "negotate": "negotiate", "nieghbor": "neighbor", "noticable": "noticeable",
+  "occassion": "occasion", "occured": "occurred", "occuring": "occurring",
+  "occurance": "occurrence", "ommit": "omit", "oppertunity": "opportunity",
+  "oppurtunity": "opportunity", "outragous": "outrageous", "paralell": "parallel",
+  "parliment": "parliament", "pasttime": "pastime", "peice": "piece",
+  "perseverence": "perseverance", "plagarism": "plagiarism", "posession": "possession",
+  "potatos": "potatoes", "prefered": "preferred", "privelege": "privilege",
+  "probaly": "probably", "pronounciation": "pronunciation", "publically": "publicly",
+  "questionaire": "questionnaire", "recieve": "receive", "recomend": "recommend",
+  "refered": "referred", "restaraunt": "restaurant", "rythm": "rhythm",
+  "sacrilegious": "sacrilegious", "seige": "siege", "seperate": "separate",
+  "sherif": "sheriff", "sieze": "seize", "similer": "similar", "sincerely": "sincerely",
+  "socialy": "socially", "speach": "speech", "succesful": "successful",
+  "supercede": "supersede", "supress": "suppress", "suprise": "surprise",
+  "tatoo": "tattoo", "tendancy": "tendency", "threshhold": "threshold",
+  "tommorow": "tomorrow", "tounge": "tongue", "truely": "truly", "twelth": "twelfth",
+  "tyrany": "tyranny", "untill": "until", "usualy": "usually", "vaccum": "vacuum",
+  "vegatable": "vegetable", "visious": "vicious", "wich": "which", "wierd": "weird",
+  "whereever": "wherever", "wont": "won't", "writting": "writing", "yesturday": "yesterday",
 };
 
+// ─── nspell lazy loader ───────────────────────────────────────────────────────
+
+let _spellChecker = null;
+let _spellCheckerPromise = null;
+
+async function loadSpellChecker() {
+  if (_spellCheckerPromise) return _spellCheckerPromise;
+  _spellCheckerPromise = (async () => {
+    try {
+      const [{ default: nspell }, affText, dicText] = await Promise.all([
+        import("nspell"),
+        fetch("/spell/en.aff").then((r) => r.text()),
+        fetch("/spell/en.dic").then((r) => r.text()),
+      ]);
+      _spellChecker = nspell({ aff: affText, dic: dicText });
+    } catch {
+      /* fall back to COMMON_CORRECTIONS only */
+    }
+  })();
+  return _spellCheckerPromise;
+}
+
 function getWordAtPoint(x, y) {
-  if (!document.caretRangeFromPoint) return { word: null, range: null };
-  const range = document.caretRangeFromPoint(x, y);
-  if (!range) return { word: null, range: null };
-  try { range.expand("word"); } catch {}
-  const word = range.toString().replace(/[^a-zA-Z''-]/g, "").trim();
-  return { word: word || null, range: word ? range : null };
+  // Prefer the standard API; fall back to the Chrome/WebKit non-standard one
+  let node, offset;
+  if (document.caretPositionFromPoint) {
+    const p = document.caretPositionFromPoint(x, y);
+    if (!p) return { word: null, range: null };
+    node = p.offsetNode; offset = p.offset;
+  } else if (document.caretRangeFromPoint) {
+    const r = document.caretRangeFromPoint(x, y);
+    if (!r) return { word: null, range: null };
+    node = r.startContainer; offset = r.startOffset;
+  } else {
+    return { word: null, range: null };
+  }
+
+  // Resolve element nodes to an adjacent text child
+  if (node.nodeType !== Node.TEXT_NODE) {
+    const child = node.childNodes[offset] ?? node.childNodes[offset - 1];
+    if (!child || child.nodeType !== Node.TEXT_NODE) return { word: null, range: null };
+    node = child; offset = 0;
+  }
+
+  const text = node.textContent || "";
+  let start = offset;
+  let end = offset;
+
+  // Expand over letters, apostrophes and hyphens (handles contractions/hyphenated words)
+  while (start > 0 && /[a-zA-Z'-]/.test(text[start - 1])) start--;
+  while (end < text.length && /[a-zA-Z'-]/.test(text[end])) end++;
+
+  // Strip leading/trailing punctuation so we don't include surrounding quotes/dashes
+  while (start < end && !/[a-zA-Z]/.test(text[start])) start++;
+  while (end > start && !/[a-zA-Z]/.test(text[end - 1])) end--;
+
+  if (start >= end) return { word: null, range: null };
+
+  const word = text.slice(start, end);
+  const wordRange = document.createRange();
+  wordRange.setStart(node, start);
+  wordRange.setEnd(node, end);
+  return { word, range: wordRange };
 }
 
 function getSpellSuggestions(word) {
   if (!word) return [];
   const lower = word.toLowerCase();
-  const fix = COMMON_CORRECTIONS[lower];
-  return fix ? [fix] : [];
+
+  // Instant lookup from known corrections table
+  const exact = COMMON_CORRECTIONS[lower];
+  if (exact) return [exact];
+
+  // nspell when loaded — skip correctly-spelled words
+  if (_spellChecker) {
+    if (_spellChecker.correct(word)) return [];
+    return _spellChecker.suggest(word).slice(0, 5);
+  }
+
+  return [];
+}
+
+// ─── Timeline view ───────────────────────────────────────────────────────────
+
+function TimelineView({ items, onRestore, starredAutoSnaps, onStar, onUnstar }) {
+  const [selected, setSelected] = useState(null);
+  return (
+    <div className="flex flex-col gap-2">
+      {/* Dot rail */}
+      <div className="flex items-center gap-0 overflow-x-auto py-2 px-1">
+        {items.map((item, i) => {
+          const isManual = item.kind === "manual";
+          const isSelected = selected?.path === item.path;
+          return (
+            <React.Fragment key={item.path}>
+              {i > 0 && <div className="h-px flex-1 min-w-[6px] bg-zinc-700" />}
+              <button
+                onClick={() => setSelected(isSelected ? null : item)}
+                title={fmtTs(item.ts)}
+                className={`shrink-0 rounded-full border-2 transition-all ${isManual
+                  ? `w-3 h-3 ${isSelected ? "border-zinc-400 bg-zinc-400" : "border-zinc-700 bg-zinc-900 hover:bg-zinc-900"}`
+                  : `w-2 h-2 ${isSelected ? "border-zinc-300 bg-zinc-300" : "border-zinc-600 bg-zinc-900 hover:bg-zinc-700"}`
+                  }`}
+              />
+            </React.Fragment>
+          );
+        })}
+      </div>
+      {/* Selected info */}
+      {selected && (
+        <div className="flex items-center gap-2 px-1 pb-1">
+          <span className={`text-[9px] font-bold uppercase tracking-widest ${selected.kind === "manual" ? "text-zinc-500" : "text-zinc-500"}`}>
+            {selected.kind === "manual" ? "Manual" : "Auto"}
+          </span>
+          <span className="text-[10px] text-zinc-400 flex-1">{fmtTs(selected.ts)}</span>
+          {selected.kind === "auto" && (
+            <button
+              onClick={() => starredAutoSnaps.has(selected.path) ? onUnstar(selected.path) : onStar(selected.path)}
+              className={`transition-colors shrink-0 star-btn${starredAutoSnaps.has(selected.path) ? " starred" : ""}`}>
+              <Star size={9} fill={starredAutoSnaps.has(selected.path) ? "currentColor" : "none"} />
+            </button>
+          )}
+          <button onClick={() => onRestore(selected.path)} className="text-[9px] text-zinc-100 hover:text-zinc-300 transition-colors">Restore</button>
+        </div>
+      )}
+    </div>
+  );
 }
 
 // ─── Note editor ──────────────────────────────────────────────────────────────
 
-function NoteEditor({ note, onBack, onSave, onDelete, onTogglePin, mdPreview, onMdPreviewChange, zenMode, onZenChange, onNavigate, onShowContextMenu }) {
-  const { saveFormat, saveNoteTo, setNoteEmoji, setNoteColor, toggleBurn, saveSnapshot, listSnapshots, readSnapshot, deleteSnapshot, saveAutoSnapshot, listAutoSnapshots, starAutoSnapshot, unstarAutoSnapshot, deleteUnstarredAutoSnapshots, starredAutoSnaps, toolbarVisible, noteScenes, setNoteScene, notePasscodes, setNotePasscode, spellcheck, setSpellcheck } = useSignalPadStore();
+function NoteEditor({ note, onBack, onSave, onDelete, onTogglePin, mdPreview, onMdPreviewChange, zenMode, onZenChange, onNavigate, onShowContextMenu, onWordCountChange, isActive = true }) {
+  const { saveFormat, saveNoteTo, setNoteEmoji, setNoteColor, toggleBurn, saveSnapshot, listSnapshots, readSnapshot, deleteSnapshot, saveAutoSnapshot, listAutoSnapshots, starAutoSnapshot, unstarAutoSnapshot, deleteUnstarredAutoSnapshots, starredAutoSnaps, toolbarVisible, notePasscodes, setNotePasscode, spellcheck, setSpellcheck, spellcheckLang, autoSaveDelay } = useSignalPadStore();
+  const autoSaveTimer = useRef(null);
   const vis = (id) => toolbarVisible.has(id);
 
   const [title, setTitle] = useState(note.title || "");
   const [viewMode, setViewMode] = useState(note.pinned);
   const [askingFormat, setAskingFormat] = useState(false);
   const [mdText, setMdText] = useState("");
-  const [wordCount, setWordCount] = useState(0);
   const [typewriterMode, setTypewriterMode] = useState(false);
   const [showSnapshots, setShowSnapshots] = useState(false);
   const [snapshots, setSnapshots] = useState([]);
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [showColorPicker, setShowColorPicker] = useState(false);
-  const [snapshotTab, setSnapshotTab]         = useState("manual");
-  const [autoSnapshots, setAutoSnapshots]     = useState([]);
-  const [showOverflow, setShowOverflow]       = useState(false);
-  const [noteUnlocked, setNoteUnlocked]       = useState(!notePasscodes[note.id]);
+  const [snapshotTab, setSnapshotTab] = useState("manual");
+  const [autoSnapshots, setAutoSnapshots] = useState([]);
+  const [showOverflow, setShowOverflow] = useState(false);
+  const [, setNoteUnlocked] = useState(!notePasscodes[note.id]);
   const [showNotePasscode, setShowNotePasscode] = useState(!!notePasscodes[note.id]);
-  const [showSetPasscode, setShowSetPasscode]   = useState(false);
+  const [showSetPasscode, setShowSetPasscode] = useState(false);
 
-  const editorRef           = useRef(null);
-  const editorWrapperRef    = useRef(null);
-  const caretRef            = useRef(null);
-  const dirty               = useRef(false);
-  const caretBlinkTimer     = useRef(null);
-  const caretAnimFrame      = useRef(null);
-  const titleRef            = useRef(title);
-  const lastAutoContentRef  = useRef(null);
-  const mountedRef          = useRef(true);
-  const overflowRef         = useRef(null);
-  const lastInteractionRef  = useRef("click"); // "click" | "key"
+  const [paragraphFocusMode, setParagraphFocusMode] = useState(false);
+  const [scratchOpen, setScratchOpen] = useState(false);
+  const [scratchContent, setScratchContent] = useState(note.scratch || "");
+  const scratchSaveTimer = useRef(null);
+
+  const editorRef = useRef(null);
+  const editorWrapperRef = useRef(null);
+  const caretRef = useRef(null);
+  const caretLastTop = useRef(null);
+  const dirty = useRef(false);
+  const caretBlinkTimer = useRef(null);
+  const caretAnimFrame = useRef(null);
+  const titleRef = useRef(title);
+  const lastAutoContentRef = useRef(null);
+  const mountedRef = useRef(true);
+  const overflowRef = useRef(null);
+  const lastInteractionRef = useRef("click"); // "click" | "key"
+  const paragraphFocusModeRef = useRef(false);
+  const focusedBlockRef = useRef(null);
 
   useEffect(() => { setViewMode(note.pinned); }, [note.pinned]);
+
+  // Paragraph focus — keep ref in sync and clean up classes when mode is off
+  useEffect(() => {
+    paragraphFocusModeRef.current = paragraphFocusMode;
+    if (!paragraphFocusMode && editorRef.current) {
+      editorRef.current.querySelectorAll(".sp-focused-block").forEach(el => el.classList.remove("sp-focused-block"));
+      focusedBlockRef.current = null;
+    }
+  }, [paragraphFocusMode]);
+
+  // Scratch notes — debounce-save into the note file
+  const handleScratchChange = useCallback((text) => {
+    setScratchContent(text);
+    clearTimeout(scratchSaveTimer.current);
+    scratchSaveTimer.current = setTimeout(() => onSave({ scratch: text }), 800);
+  }, [onSave]);
+
+  useEffect(() => () => clearTimeout(scratchSaveTimer.current), []);
 
   // ── Auto-snapshot lifecycle ───────────────────────────────────────────────
   useEffect(() => { titleRef.current = title; }, [title]);
@@ -600,7 +812,7 @@ function NoteEditor({ note, onBack, onSave, onDelete, onTogglePin, mdPreview, on
 
   useEffect(() => {
     // Wipe unstarred auto-snapshots when note is closed
-    return () => { deleteUnstarredAutoSnapshots(note.id).catch(() => {}); };
+    return () => { deleteUnstarredAutoSnapshots(note.id).catch(() => { }); };
   }, [note.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
@@ -615,7 +827,7 @@ function NoteEditor({ note, onBack, onSave, onDelete, onTogglePin, mdPreview, on
   // Esc closes modes inside the editor
   useEffect(() => {
     const handler = (e) => {
-      if (e.key !== "Escape") return;
+      if (!isActive || e.key !== "Escape") return;
       if (typewriterMode) { setTypewriterMode(false); e.stopPropagation(); return; }
       if (mdPreview) { onMdPreviewChange(false); e.stopPropagation(); return; }
       if (showSnapshots) { setShowSnapshots(false); e.stopPropagation(); return; }
@@ -628,7 +840,7 @@ function NoteEditor({ note, onBack, onSave, onDelete, onTogglePin, mdPreview, on
   }, [typewriterMode, mdPreview, showSnapshots, showEmojiPicker, showColorPicker, showNotePasscode, showSetPasscode, onMdPreviewChange]);
 
   useEffect(() => {
-    if (viewMode) return;
+    if (viewMode || !isActive) return;
     const intervalId = setInterval(async () => {
       const content = editorRef.current?.innerHTML || note.content || "";
       if (content === lastAutoContentRef.current) return;
@@ -643,12 +855,31 @@ function NoteEditor({ note, onBack, onSave, onDelete, onTogglePin, mdPreview, on
   // ── Word count ────────────────────────────────────────────────────────────
   const updateWordCount = useCallback(() => {
     const text = editorRef.current?.innerText || "";
-    setWordCount(text.trim().split(/\s+/).filter(Boolean).length);
-  }, []);
+    const count = text.trim().split(/\s+/).filter(Boolean).length;
+    onWordCountChange?.(count);
+  }, [onWordCountChange]);
 
   useEffect(() => { updateWordCount(); }, [note.content]);
+  useEffect(() => { if (isActive) updateWordCount(); }, [isActive, updateWordCount]);
+
+  // Pre-warm nspell so suggestions are ready before first right-click
+  useEffect(() => { if (spellcheck) loadSpellChecker(); }, [spellcheck]);
 
   // ── Smooth caret ──────────────────────────────────────────────────────────
+  const updateParagraphFocus = useCallback(() => {
+    if (!paragraphFocusModeRef.current || !editorRef.current) return;
+    const sel = window.getSelection();
+    let node = sel?.anchorNode;
+    if (!node) return;
+    while (node && node.parentElement !== editorRef.current) node = node.parentElement;
+    if (focusedBlockRef.current && focusedBlockRef.current !== node)
+      focusedBlockRef.current.classList.remove("sp-focused-block");
+    if (node instanceof HTMLElement && node.parentElement === editorRef.current) {
+      node.classList.add("sp-focused-block");
+      focusedBlockRef.current = node;
+    }
+  }, []);
+
   const BLINK_RESUME_MS = 500;
 
   const updateCaretPosition = useCallback((animate) => {
@@ -656,7 +887,7 @@ function NoteEditor({ note, onBack, onSave, onDelete, onTogglePin, mdPreview, on
     const sel = window.getSelection();
     const caret = caretRef.current;
     if (!sel || sel.rangeCount === 0 || document.activeElement !== editorRef.current ||
-        !sel.isCollapsed || !editorRef.current.contains(sel.anchorNode)) {
+      !sel.isCollapsed || !editorRef.current.contains(sel.anchorNode)) {
       caret.style.opacity = "0"; return;
     }
     const range = sel.getRangeAt(0).cloneRange();
@@ -687,11 +918,25 @@ function NoteEditor({ note, onBack, onSave, onDelete, onTogglePin, mdPreview, on
     if (!rect || rect.height === 0) { caret.style.opacity = "0"; return; }
 
     const wrapperRect = editorWrapperRef.current.getBoundingClientRect();
-    caret.style.transition = animate ? "left 80ms ease-out, top 80ms ease-out, height 80ms ease-out" : "none";
-    if (!animate) requestAnimationFrame(() => { if (caret) caret.style.transition = "left 80ms ease-out, top 80ms ease-out, height 80ms ease-out"; });
-    caret.style.top    = `${rect.top - wrapperRect.top + (editorRef.current?.scrollTop || 0)}px`;
-    caret.style.left   = `${rect.left - wrapperRect.left}px`;
-    caret.style.height = `${rect.height}px`;
+    const newTop = rect.top - wrapperRect.top + (editorRef.current?.scrollTop || 0);
+    const newLeft = rect.left - wrapperRect.left;
+    const lineChanged = caretLastTop.current !== null && Math.abs(newTop - caretLastTop.current) > rect.height * 0.5;
+    caretLastTop.current = newTop;
+
+    if (!animate || lineChanged) {
+      // Snap both axes instantly on line changes or non-animated updates
+      caret.style.transition = "none";
+      caret.style.top = `${newTop}px`;
+      caret.style.left = `${newLeft}px`;
+      caret.style.height = `${rect.height}px`;
+      requestAnimationFrame(() => { if (caret) caret.style.transition = "left 80ms ease-out"; });
+    } else {
+      // Same line — only slide horizontally
+      caret.style.transition = "left 80ms ease-out";
+      caret.style.top = `${newTop}px`;
+      caret.style.height = `${rect.height}px`;
+      caret.style.left = `${newLeft}px`;
+    }
     caret.style.opacity = "1";
     caret.classList.remove("smooth-caret--blinking");
     clearTimeout(caretBlinkTimer.current);
@@ -719,40 +964,41 @@ function NoteEditor({ note, onBack, onSave, onDelete, onTogglePin, mdPreview, on
     if (!editor || !wrapper) return;
     const coalesced = (animate) => () => {
       cancelAnimationFrame(caretAnimFrame.current);
-      caretAnimFrame.current = requestAnimationFrame(() => { updateCaretPosition(animate); enforceTypewriter(); });
+      caretAnimFrame.current = requestAnimationFrame(() => { updateCaretPosition(animate); enforceTypewriter(); updateParagraphFocus(); });
     };
     const handleSelectionChange = coalesced(true);
-    const handleScroll  = coalesced(false);
-    const handleFocus   = coalesced(false);
-    const handleBlur    = () => {
+    const handleScroll = coalesced(false);
+    const handleFocus = coalesced(false);
+    const handleBlur = () => {
       cancelAnimationFrame(caretAnimFrame.current);
       clearTimeout(caretBlinkTimer.current);
+      caretLastTop.current = null;
       const caret = caretRef.current;
       if (caret) { caret.classList.remove("smooth-caret--blinking"); caret.style.opacity = "0"; }
     };
     const handleMouseDown = () => { lastInteractionRef.current = "click"; };
-    const handleKeyDown   = () => { lastInteractionRef.current = "key"; };
+    const handleKeyDown = () => { lastInteractionRef.current = "key"; };
     const ro = new ResizeObserver(coalesced(false));
     ro.observe(wrapper);
     document.addEventListener("selectionchange", handleSelectionChange);
-    editor.addEventListener("scroll",    handleScroll);
-    editor.addEventListener("focus",     handleFocus);
-    editor.addEventListener("blur",      handleBlur);
+    editor.addEventListener("scroll", handleScroll);
+    editor.addEventListener("focus", handleFocus);
+    editor.addEventListener("blur", handleBlur);
     editor.addEventListener("mousedown", handleMouseDown);
-    editor.addEventListener("keydown",   handleKeyDown);
+    editor.addEventListener("keydown", handleKeyDown);
     if (document.activeElement === editor) updateCaretPosition(false);
     return () => {
       document.removeEventListener("selectionchange", handleSelectionChange);
-      editor.removeEventListener("scroll",    handleScroll);
-      editor.removeEventListener("focus",     handleFocus);
-      editor.removeEventListener("blur",      handleBlur);
+      editor.removeEventListener("scroll", handleScroll);
+      editor.removeEventListener("focus", handleFocus);
+      editor.removeEventListener("blur", handleBlur);
       editor.removeEventListener("mousedown", handleMouseDown);
-      editor.removeEventListener("keydown",   handleKeyDown);
+      editor.removeEventListener("keydown", handleKeyDown);
       ro.disconnect();
       cancelAnimationFrame(caretAnimFrame.current);
       clearTimeout(caretBlinkTimer.current);
     };
-  }, [viewMode, updateCaretPosition, enforceTypewriter]);
+  }, [viewMode, updateCaretPosition, enforceTypewriter, updateParagraphFocus]);
 
   useEffect(() => {
     if (editorRef.current && !viewMode) {
@@ -782,22 +1028,48 @@ function NoteEditor({ note, onBack, onSave, onDelete, onTogglePin, mdPreview, on
   const resolveAutoExt = () => saveFormat !== "ask" ? saveFormat : (note.fileExt || "md");
 
   const handleSave = (fileExt) => {
+    clearTimeout(autoSaveTimer.current);
+    editorRef.current?.querySelectorAll(".sp-focused-block").forEach(el => el.classList.remove("sp-focused-block"));
+    focusedBlockRef.current = null;
     const content = editorRef.current?.innerHTML || "";
     onSave({ title: title.trim() || "Untitled", content, fileExt: fileExt || resolveAutoExt() });
     dirty.current = false;
     setAskingFormat(false);
   };
 
+  useEffect(() => () => clearTimeout(autoSaveTimer.current), []);
+
   const handleSaveClick = () => {
     if (saveFormat === "ask") setAskingFormat(true);
     else handleSave(saveFormat);
   };
 
+  const handleExportDocx = async (filePath, html) => {
+    const { Document, Packer, Paragraph, TextRun, HeadingLevel, Table, TableRow, TableCell, WidthType } =
+      await import("docx");
+    const elements = htmlToDocxElements(html, { Paragraph, TextRun, HeadingLevel, Table, TableRow, TableCell, WidthType });
+    const doc = new Document({ sections: [{ properties: {}, children: elements }] });
+    const buf = await Packer.toBuffer(doc);
+    await invoke("write_file_bytes", { path: filePath, data: Array.from(new Uint8Array(buf)) });
+    dirty.current = false; setAskingFormat(false);
+  };
+
   const handleSaveToPath = async () => {
     const noteTitle = title.trim() || "Untitled";
     const content = editorRef.current?.innerHTML || "";
-    const path = await saveDialog({ defaultPath: noteTitle, filters: [{ name: "Markdown", extensions: ["md"] }, { name: "Text", extensions: ["txt"] }] });
+    const path = await saveDialog({
+      defaultPath: noteTitle,
+      filters: [
+        { name: "Markdown", extensions: ["md"] },
+        { name: "Text", extensions: ["txt"] },
+        { name: "Word Document", extensions: ["docx"] },
+      ],
+    });
     if (!path) return;
+    if (path.toLowerCase().endsWith(".docx")) {
+      await handleExportDocx(path, content);
+      return;
+    }
     await saveNoteTo(note.id, path, { title: noteTitle, content });
     dirty.current = false; setAskingFormat(false);
   };
@@ -827,7 +1099,7 @@ function NoteEditor({ note, onBack, onSave, onDelete, onTogglePin, mdPreview, on
   const handleCopyMd = async () => {
     const html = editorRef.current?.innerHTML || note.content || "";
     const md = td.turndown(html);
-    await navigator.clipboard.writeText(md).catch(() => {});
+    await navigator.clipboard.writeText(md).catch(() => { });
   };
 
   // ── Snapshot ──────────────────────────────────────────────────────────────
@@ -876,14 +1148,15 @@ function NoteEditor({ note, onBack, onSave, onDelete, onTogglePin, mdPreview, on
     e.preventDefault();
     const hasSelection = !!window.getSelection()?.toString();
     const { word, range: wordRange } = getWordAtPoint(e.clientX, e.clientY);
+    const savedRange = wordRange ? wordRange.cloneRange() : null;
     const suggestions = spellcheck ? getSpellSuggestions(word) : [];
 
     const applyCorrection = (correction) => {
-      if (!wordRange || !editorRef.current) return;
+      if (!savedRange || !editorRef.current) return;
       editorRef.current.focus();
       const sel = window.getSelection();
       sel.removeAllRanges();
-      sel.addRange(wordRange);
+      sel.addRange(savedRange.cloneRange());
       document.execCommand("insertText", false, correction);
     };
 
@@ -894,19 +1167,20 @@ function NoteEditor({ note, onBack, onSave, onDelete, onTogglePin, mdPreview, on
         ...(suggestions.length > 0 ? [
           ...suggestions.map(s => ({
             label: s,
+            suggestion: true,
             action: () => applyCorrection(s),
           })),
           { separator: true },
         ] : []),
         ...(hasSelection ? [
-          { icon: <Scissors size={11} />, label: "Cut",  shortcut: "Ctrl+X", action: () => document.execCommand("cut") },
-          { icon: <Copy size={11} />,     label: "Copy", shortcut: "Ctrl+C", action: () => document.execCommand("copy") },
+          { icon: <Scissors size={11} />, label: "Cut", shortcut: "Ctrl+X", action: () => document.execCommand("cut") },
+          { icon: <Copy size={11} />, label: "Copy", shortcut: "Ctrl+C", action: () => document.execCommand("copy") },
         ] : []),
-        { label: "Paste",      shortcut: "Ctrl+V", action: () => document.execCommand("paste") },
+        { label: "Paste", shortcut: "Ctrl+V", action: () => document.execCommand("paste") },
         { label: "Select All", shortcut: "Ctrl+A", action: () => document.execCommand("selectAll") },
         { separator: true },
         { label: spellcheck ? "✓ Spell Check" : "Spell Check", action: () => setSpellcheck(!spellcheck) },
-        { icon: <Copy size={11} />,   label: "Copy as Markdown", action: handleCopyMd },
+        { icon: <Copy size={11} />, label: "Copy as Markdown", action: handleCopyMd },
         ...(!viewMode ? [{ icon: <Camera size={11} />, label: "Save Snapshot", action: handleSnapshot }] : []),
         { separator: true },
         ...(!notePasscodes[note.id]
@@ -928,7 +1202,7 @@ function NoteEditor({ note, onBack, onSave, onDelete, onTogglePin, mdPreview, on
     if (!heading) return;
     const isCollapsed = heading.classList.toggle("collapsed");
     let el = heading.nextElementSibling;
-    while (el && !["H1","H2","H3"].includes(el.tagName)) {
+    while (el && !["H1", "H2", "H3"].includes(el.tagName)) {
       el.classList.toggle("collapsed-section", isCollapsed);
       el = el.nextElementSibling;
     }
@@ -936,8 +1210,6 @@ function NoteEditor({ note, onBack, onSave, onDelete, onTogglePin, mdPreview, on
 
   // ── Rendered HTML with wiki links ─────────────────────────────────────────
   const processedContent = processWikiLinks(note.content || "");
-
-  const currentSceneId = noteScenes[note.id] ?? null;
 
   // Per-note passcode gate
   if (showNotePasscode) {
@@ -969,7 +1241,7 @@ function NoteEditor({ note, onBack, onSave, onDelete, onTogglePin, mdPreview, on
     <div className={`flex flex-col flex-1 min-h-0 ${zenMode ? "zen-mode" : ""}`}>
       {/* Editor header (hidden in zen mode) */}
       {!zenMode && (
-        <div className="flex items-center gap-2 px-3 py-2 border-b border-zinc-700 shrink-0 bg-zinc-900/80">
+        <div className="flex items-center gap-2 px-3 py-2 border-b border-zinc-700 shrink-0 surface-900">
           <button onClick={handleBack} className="text-zinc-500 hover:text-zinc-300 transition-colors p-0.5 rounded">
             <ChevronLeft size={15} />
           </button>
@@ -1021,8 +1293,20 @@ function NoteEditor({ note, onBack, onSave, onDelete, onTogglePin, mdPreview, on
             )}
             {vis("typewriter") && !viewMode && !mdPreview && (
               <button onClick={() => setTypewriterMode((s) => !s)} title="Typewriter mode"
-                className={`p-1.5 rounded transition-colors ${typewriterMode ? "text-cyan-400 bg-cyan-950" : "text-zinc-500 hover:text-zinc-300 hover:bg-zinc-700"}`}>
+                className={`p-1.5 rounded transition-colors ${typewriterMode ? "text-zinc-100 bg-zinc-950" : "text-zinc-500 hover:text-zinc-300 hover:bg-zinc-700"}`}>
                 <AlignCenter size={13} />
+              </button>
+            )}
+            {vis("focusmode") && !viewMode && !mdPreview && (
+              <button onClick={() => setParagraphFocusMode((s) => !s)} title="Paragraph focus"
+                className={`p-1.5 rounded transition-colors ${paragraphFocusMode ? "text-zinc-100 bg-zinc-950" : "text-zinc-500 hover:text-zinc-300 hover:bg-zinc-700"}`}>
+                <Crosshair size={13} />
+              </button>
+            )}
+            {vis("scratch") && !viewMode && !mdPreview && (
+              <button onClick={() => setScratchOpen((s) => !s)} title="Research notes"
+                className={`p-1.5 rounded transition-colors ${scratchOpen ? "text-amber-400 bg-amber-950" : "text-zinc-500 hover:text-zinc-300 hover:bg-zinc-700"}`}>
+                <BookMarked size={13} />
               </button>
             )}
             {vis("mdpreview") && (
@@ -1033,7 +1317,7 @@ function NoteEditor({ note, onBack, onSave, onDelete, onTogglePin, mdPreview, on
             )}
             {vis("pin") && (
               <button onClick={handlePin} title={note.pinned ? "Unpin" : "Pin (read-only)"}
-                className={`p-1.5 rounded transition-colors ${note.pinned ? "text-amber-400 hover:text-amber-300 hover:bg-amber-950" : "text-zinc-500 hover:text-zinc-300 hover:bg-zinc-700"}`}>
+                className={`p-1.5 rounded transition-colors ${note.pinned ? "pinned-btn" : "text-zinc-500 hover:text-zinc-300 hover:bg-zinc-700"}`}>
                 {note.pinned ? <PinOff size={13} /> : <Pin size={13} />}
               </button>
             )}
@@ -1057,7 +1341,7 @@ function NoteEditor({ note, onBack, onSave, onDelete, onTogglePin, mdPreview, on
             )}
             {vis("history") && (
               <button onClick={toggleSnapshots} title="Snapshot history"
-                className={`p-1.5 rounded transition-colors ${showSnapshots ? "text-cyan-400 bg-cyan-950" : "text-zinc-600 hover:text-zinc-300 hover:bg-zinc-700"}`}>
+                className={`p-1.5 rounded transition-colors ${showSnapshots ? "text-zinc-100 bg-zinc-950" : "text-zinc-600 hover:text-zinc-300 hover:bg-zinc-700"}`}>
                 <History size={13} />
               </button>
             )}
@@ -1072,7 +1356,7 @@ function NoteEditor({ note, onBack, onSave, onDelete, onTogglePin, mdPreview, on
             {TOOLBAR_ICON_CONFIG.some((c) => !vis(c.id)) && (
               <div className="relative" ref={overflowRef}>
                 <button onClick={() => setShowOverflow((s) => !s)} title="More actions"
-                  className={`p-1.5 rounded transition-colors ${showOverflow ? "text-cyan-400 bg-cyan-950" : "text-zinc-600 hover:text-zinc-300 hover:bg-zinc-700"}`}>
+                  className={`p-1.5 rounded transition-colors ${showOverflow ? "text-zinc-100 bg-zinc-950" : "text-zinc-600 hover:text-zinc-300 hover:bg-zinc-700"}`}>
                   <MoreHorizontal size={13} />
                 </button>
                 {showOverflow && (
@@ -1091,8 +1375,20 @@ function NoteEditor({ note, onBack, onSave, onDelete, onTogglePin, mdPreview, on
                     )}
                     {!vis("typewriter") && !viewMode && !mdPreview && (
                       <button onClick={() => { setTypewriterMode((s) => !s); setShowOverflow(false); }}
-                        className={`w-full flex items-center gap-2 px-3 py-1.5 text-[11px] text-left transition-colors ${typewriterMode ? "text-cyan-400" : "text-zinc-300 hover:bg-zinc-800 hover:text-white"}`}>
+                        className={`w-full flex items-center gap-2 px-3 py-1.5 text-[11px] text-left transition-colors ${typewriterMode ? "text-zinc-100" : "text-zinc-300 hover:bg-zinc-800 hover:text-white"}`}>
                         <AlignCenter size={11} className="shrink-0" />Typewriter mode{typewriterMode && <span className="ml-auto text-[8px] text-zinc-600">ON</span>}
+                      </button>
+                    )}
+                    {!vis("focusmode") && !viewMode && !mdPreview && (
+                      <button onClick={() => { setParagraphFocusMode((s) => !s); setShowOverflow(false); }}
+                        className={`w-full flex items-center gap-2 px-3 py-1.5 text-[11px] text-left transition-colors ${paragraphFocusMode ? "text-zinc-100" : "text-zinc-300 hover:bg-zinc-800 hover:text-white"}`}>
+                        <Crosshair size={11} className="shrink-0" />Paragraph focus{paragraphFocusMode && <span className="ml-auto text-[8px] text-zinc-600">ON</span>}
+                      </button>
+                    )}
+                    {!vis("scratch") && !viewMode && !mdPreview && (
+                      <button onClick={() => { setScratchOpen((s) => !s); setShowOverflow(false); }}
+                        className={`w-full flex items-center gap-2 px-3 py-1.5 text-[11px] text-left transition-colors ${scratchOpen ? "text-amber-400" : "text-zinc-300 hover:bg-zinc-800 hover:text-white"}`}>
+                        <BookMarked size={11} className="shrink-0" />Research notes{scratchOpen && <span className="ml-auto text-[8px] text-zinc-600">ON</span>}
                       </button>
                     )}
                     {!vis("mdpreview") && (
@@ -1103,7 +1399,7 @@ function NoteEditor({ note, onBack, onSave, onDelete, onTogglePin, mdPreview, on
                     )}
                     {!vis("pin") && (
                       <button onClick={() => { handlePin(); setShowOverflow(false); }}
-                        className={`w-full flex items-center gap-2 px-3 py-1.5 text-[11px] text-left transition-colors ${note.pinned ? "text-amber-400" : "text-zinc-300 hover:bg-zinc-800 hover:text-white"}`}>
+                        className={`w-full flex items-center gap-2 px-3 py-1.5 text-[11px] text-left transition-colors ${note.pinned ? "text-pinned" : "text-zinc-300 hover:bg-zinc-800 hover:text-white"}`}>
                         {note.pinned ? <PinOff size={11} className="shrink-0" /> : <Pin size={11} className="shrink-0" />}{note.pinned ? "Unpin" : "Pin"}
                       </button>
                     )}
@@ -1127,7 +1423,7 @@ function NoteEditor({ note, onBack, onSave, onDelete, onTogglePin, mdPreview, on
                     )}
                     {!vis("history") && (
                       <button onClick={() => { toggleSnapshots(); setShowOverflow(false); }}
-                        className={`w-full flex items-center gap-2 px-3 py-1.5 text-[11px] text-left transition-colors ${showSnapshots ? "text-cyan-400" : "text-zinc-300 hover:bg-zinc-800 hover:text-white"}`}>
+                        className={`w-full flex items-center gap-2 px-3 py-1.5 text-[11px] text-left transition-colors ${showSnapshots ? "text-zinc-100" : "text-zinc-300 hover:bg-zinc-800 hover:text-white"}`}>
                         <History size={11} className="shrink-0" />Snapshot history
                       </button>
                     )}
@@ -1145,13 +1441,13 @@ function NoteEditor({ note, onBack, onSave, onDelete, onTogglePin, mdPreview, on
             {!viewMode && !mdPreview && (
               askingFormat ? (
                 <div className="flex items-center gap-1">
-                  <button onClick={() => handleSave("md")} className="px-2 py-1 rounded bg-cyan-950 border border-cyan-800 text-cyan-300 text-[10px] font-bold tracking-wider hover:bg-cyan-900 transition-colors">.md</button>
+                  <button onClick={() => handleSave("md")} className="px-2 py-1 rounded bg-zinc-950 border border-zinc-800 text-zinc-300 text-[10px] font-bold tracking-wider hover:bg-zinc-900 transition-colors">.md</button>
                   <button onClick={() => handleSave("txt")} className="px-2 py-1 rounded bg-zinc-700 border border-zinc-600 text-zinc-300 text-[10px] font-bold tracking-wider hover:bg-zinc-600 transition-colors">.txt</button>
-                  <button onClick={handleSaveToPath} title="Save to…" className="p-1 rounded border border-zinc-700 bg-zinc-900 text-zinc-400 hover:text-zinc-200 hover:border-zinc-600 transition-colors"><FolderOpen size={11} /></button>
+                  <button onClick={handleSaveToPath} title="Save to…" className="p-1 rounded border border-zinc-700 bg-zinc-900 text-zinc-400 hover:text-zinc-200 hover:border-zinc-600 transition-colors"><FolderOpen size={13} /></button>
                   <button onClick={() => setAskingFormat(false)} className="p-1 rounded text-zinc-600 hover:text-zinc-400 transition-colors"><X size={10} /></button>
                 </div>
               ) : (
-                <button onClick={handleSaveClick} className="px-2.5 py-1 rounded bg-cyan-950 border border-cyan-800 text-cyan-300 text-[10px] font-bold tracking-wider hover:bg-cyan-900 transition-colors">SAVE</button>
+                <button onClick={handleSaveClick} className="btn btn-primary">SAVE</button>
               )
             )}
             <button onClick={() => { if (window.confirm("Delete this note?")) onDelete(); }}
@@ -1174,12 +1470,11 @@ function NoteEditor({ note, onBack, onSave, onDelete, onTogglePin, mdPreview, on
       {showSnapshots && !zenMode && (
         <div className="border-b border-zinc-800 bg-zinc-900/60 shrink-0 flex flex-col max-h-[160px]">
           <div className="flex items-center px-3 border-b border-zinc-800 shrink-0">
-            {[["manual", "Manual"], ["auto", "Auto ⚡"]].map(([id, label]) => (
+            {[["manual", "Manual"], ["auto", "Auto ⚡"], ["timeline", "Timeline"]].map(([id, label]) => (
               <button key={id}
-                onClick={() => { setSnapshotTab(id); if (id === "auto") loadAutoSnapshots(); }}
-                className={`px-2.5 py-1.5 text-[9px] font-bold uppercase tracking-[0.12em] border-b-2 -mb-px transition-colors ${
-                  snapshotTab === id ? "border-cyan-400 text-cyan-400" : "border-transparent text-zinc-600 hover:text-zinc-400"
-                }`}>{label}
+                onClick={() => { setSnapshotTab(id); if (id === "auto") loadAutoSnapshots(); if (id === "timeline") { loadSnapshots(); loadAutoSnapshots(); } }}
+                className={`px-2.5 py-1.5 text-[9px] font-bold uppercase tracking-[0.12em] border-b-2 -mb-px transition-colors ${snapshotTab === id ? "border-zinc-400 text-zinc-100" : "border-transparent text-zinc-600 hover:text-zinc-400"
+                  }`}>{label}
               </button>
             ))}
           </div>
@@ -1188,30 +1483,42 @@ function NoteEditor({ note, onBack, onSave, onDelete, onTogglePin, mdPreview, on
               snapshots.length === 0
                 ? <p className="text-[10px] text-zinc-600 py-1">No snapshots yet — click 📷 to save one.</p>
                 : snapshots.map((s) => (
-                    <div key={s.path} className="flex items-center gap-2 py-0.5">
-                      <span className="text-[10px] text-zinc-400 flex-1">{fmtTs(s.ts)}</span>
-                      <button onClick={() => handleRestoreSnapshot(s.path)} className="text-[9px] text-cyan-400 hover:text-cyan-300 transition-colors">Restore</button>
-                      <button onClick={() => handleDeleteSnapshot(s.path)} className="text-[9px] text-zinc-600 hover:text-red-400 transition-colors">Delete</button>
-                    </div>
-                  ))
-            ) : (
+                  <div key={s.path} className="flex items-center gap-2 py-0.5">
+                    <span className="text-[10px] text-zinc-400 flex-1">{fmtTs(s.ts)}</span>
+                    <button onClick={() => handleRestoreSnapshot(s.path)} className="text-[9px] text-zinc-100 hover:text-zinc-300 transition-colors">Restore</button>
+                    <button onClick={() => handleDeleteSnapshot(s.path)} className="text-[9px] text-zinc-600 hover:text-red-400 transition-colors">Delete</button>
+                  </div>
+                ))
+            ) : snapshotTab === "auto" ? (
               autoSnapshots.length === 0
                 ? <p className="text-[10px] text-zinc-600 py-1">No auto-snapshots yet. Saves every minute while editing.</p>
                 : autoSnapshots.map((s) => {
-                    const starred = starredAutoSnaps.has(s.path);
-                    return (
-                      <div key={s.path} className="flex items-center gap-1.5 py-0.5">
-                        <button onClick={() => starred ? unstarAutoSnapshot(s.path) : starAutoSnapshot(s.path)}
-                          title={starred ? "Starred — kept after close" : "Star to keep after note closes"}
-                          className={`transition-colors shrink-0 ${starred ? "text-amber-400" : "text-zinc-700 hover:text-amber-400"}`}>
-                          <Star size={9} fill={starred ? "currentColor" : "none"} />
-                        </button>
-                        <span className="text-[10px] text-zinc-400 flex-1">{fmtTs(s.ts)}</span>
-                        <button onClick={() => handleRestoreSnapshot(s.path)} className="text-[9px] text-cyan-400 hover:text-cyan-300 transition-colors">Restore</button>
-                        <button onClick={() => handleDeleteAutoSnapshot(s.path)} className="text-[9px] text-zinc-600 hover:text-red-400 transition-colors">Delete</button>
-                      </div>
-                    );
-                  })
+                  const starred = starredAutoSnaps.has(s.path);
+                  return (
+                    <div key={s.path} className="flex items-center gap-1.5 py-0.5">
+                      <button onClick={() => starred ? unstarAutoSnapshot(s.path) : starAutoSnapshot(s.path)}
+                        title={starred ? "Starred — kept after close" : "Star to keep after note closes"}
+                        className={`transition-colors shrink-0 star-btn${starred ? " starred" : ""}`}>
+                        <Star size={9} fill={starred ? "currentColor" : "none"} />
+                      </button>
+                      <span className="text-[10px] text-zinc-400 flex-1">{fmtTs(s.ts)}</span>
+                      <button onClick={() => handleRestoreSnapshot(s.path)} className="text-[9px] text-zinc-100 hover:text-zinc-300 transition-colors">Restore</button>
+                      <button onClick={() => handleDeleteAutoSnapshot(s.path)} className="text-[9px] text-zinc-600 hover:text-red-400 transition-colors">Delete</button>
+                    </div>
+                  );
+                })
+            ) : (
+              /* ── Timeline tab ── */
+              (() => {
+                const all = [
+                  ...snapshots.map(s => ({ ...s, kind: "manual" })),
+                  ...autoSnapshots.map(s => ({ ...s, kind: "auto" })),
+                ].sort((a, b) => a.ts - b.ts);
+                if (!all.length) return <p className="text-[10px] text-zinc-600 py-1">No snapshots yet.</p>;
+                return (
+                  <TimelineView items={all} onRestore={handleRestoreSnapshot} starredAutoSnaps={starredAutoSnaps} onStar={starAutoSnapshot} onUnstar={unstarAutoSnapshot} />
+                );
+              })()
             )}
           </div>
         </div>
@@ -1234,6 +1541,24 @@ function NoteEditor({ note, onBack, onSave, onDelete, onTogglePin, mdPreview, on
           dangerouslySetInnerHTML={{ __html: processedContent || "<p class='empty'>This note is empty.</p>" }} />
       )}
 
+      {/* Scratch notes panel */}
+      {!zenMode && !viewMode && !mdPreview && scratchOpen && (
+        <div className="shrink-0 border-t border-zinc-700 bg-zinc-900/50 flex flex-col" style={{ maxHeight: 140 }}>
+          <div className="flex items-center justify-between px-3 py-1 border-b border-zinc-800 shrink-0">
+            <span className="text-[9px] font-bold uppercase tracking-widest text-zinc-500 flex items-center gap-1.5">
+              <BookMarked size={9} /> Research Notes
+            </span>
+            <button onClick={() => setScratchOpen(false)} className="text-zinc-700 hover:text-zinc-400 transition-colors p-0.5 rounded"><X size={9} /></button>
+          </div>
+          <textarea
+            value={scratchContent}
+            onChange={(e) => handleScratchChange(e.target.value)}
+            placeholder="Quick notes, references, ideas…"
+            className="flex-1 resize-none bg-transparent text-[11px] text-zinc-400 px-3 py-2 focus:outline-none placeholder:text-zinc-700 leading-relaxed"
+          />
+        </div>
+      )}
+
       {/* Edit area */}
       {!viewMode && (
         <div ref={editorWrapperRef} className={`relative min-h-0 ${mdPreview ? "hidden" : "flex-1"}`}>
@@ -1244,19 +1569,22 @@ function NoteEditor({ note, onBack, onSave, onDelete, onTogglePin, mdPreview, on
             contentEditable
             suppressContentEditableWarning
             spellCheck={spellcheck}
-            onInput={() => { dirty.current = true; updateWordCount(); }}
+            lang={spellcheckLang}
+            onInput={() => {
+              dirty.current = true;
+              updateWordCount();
+              if (autoSaveDelay > 0) {
+                clearTimeout(autoSaveTimer.current);
+                autoSaveTimer.current = setTimeout(() => { if (dirty.current) handleSave(resolveAutoExt()); }, autoSaveDelay);
+              }
+            }}
             onKeyDown={(e) => {
               if (e.key === "s" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); handleSaveClick(); }
             }}
             onContextMenu={handleEditorContextMenu}
-            className={`absolute inset-0 overflow-y-auto px-4 py-3 focus:outline-none leading-relaxed signalpad-content bg-zinc-950 caret-transparent${mdPreview ? " invisible" : ""}`}
+            className={`absolute inset-0 overflow-y-auto px-4 py-3 focus:outline-none leading-relaxed signalpad-content bg-zinc-950 caret-transparent${mdPreview ? " invisible" : ""}${paragraphFocusMode ? " paragraph-focus-mode" : ""}`}
             data-placeholder="Start writing…"
           />
-          {!mdPreview && wordCount > 0 && (
-            <div className="absolute bottom-2 right-3 z-10 text-[9px] text-zinc-700/60 pointer-events-none select-none">
-              {wordCount}w · {Math.max(1, Math.ceil(wordCount / 200))}min
-            </div>
-          )}
         </div>
       )}
     </div>
@@ -1268,14 +1596,14 @@ function NoteEditor({ note, onBack, onSave, onDelete, onTogglePin, mdPreview, on
 function WindowControls() {
   const win = getCurrentWindow();
   return (
-    <div className="flex items-center gap-0.5">
+    <div className="flex items-center gap-1">
       <button onClick={() => win.minimize()} title="Minimize"
-        className="w-6 h-6 flex items-center justify-center rounded text-zinc-600 hover:text-zinc-300 hover:bg-zinc-700 transition-colors">
-        <Minus size={10} />
+        className="w-7 h-7 flex items-center justify-center rounded text-zinc-600 hover:text-zinc-300 hover:bg-zinc-700 transition-colors">
+        <Minus size={13} strokeWidth={2} />
       </button>
       <button onClick={() => win.close()} title="Close"
-        className="w-6 h-6 flex items-center justify-center rounded text-zinc-600 hover:text-red-400 hover:bg-red-500/15 transition-colors">
-        <X size={10} />
+        className="close-btn w-7 h-7 flex items-center justify-center rounded hover:bg-red-500/95">
+        <X size={13} strokeWidth={3} />
       </button>
     </div>
   );
@@ -1284,7 +1612,8 @@ function WindowControls() {
 // ─── Settings view ────────────────────────────────────────────────────────────
 
 function SettingsView({ onClose }) {
-  const { notes, addedFonts, addFont, removeFont, clearNotes, saveFormat, setSaveFormat, toolbarVisible, setToolbarVisible, theme, setTheme, appPasscode, setAppPasscode, cloudBackupPath, setCloudBackupPath, runCloudBackup } = useSignalPadStore();
+  const { notes, addedFonts, addFont, removeFont, clearNotes, saveFormat, setSaveFormat, toolbarVisible, setToolbarVisible, theme, setTheme, appPasscode, setAppPasscode, cloudBackupPath, setCloudBackupPath, runCloudBackup, cardScenesEnabled, setCardScenesEnabled, cardDensity, setCardDensity, accentColor, setAccentColor, autoLockMinutes, setAutoLockMinutes, autoBackupSchedule, setAutoBackupSchedule, noteCap, setNoteCap, defaultTemplate, setDefaultTemplate, spellcheck, setSpellcheck, spellcheckLang, setSpellcheckLang, autoSaveDelay, setAutoSaveDelay } = useSignalPadStore();
+  const [tab, setTab] = useState("appearance");
   const [showBrowser, setShowBrowser] = useState(false);
   const [browserSearch, setBrowserSearch] = useState("");
   const [confirmClear, setConfirmClear] = useState(false);
@@ -1308,11 +1637,32 @@ function SettingsView({ onClose }) {
 
   const availableInBrowser = GOOGLE_FONTS.filter((f) => !addedFonts.includes(f) && (!browserSearch || f.toLowerCase().includes(browserSearch.toLowerCase())));
 
+  const TABS = [
+    { id: "appearance", label: "Appearance", icon: <Palette size={11} /> },
+    { id: "writing", label: "Writing", icon: <FileText size={11} /> },
+    { id: "security", label: "Security", icon: <Lock size={11} /> },
+    { id: "storage", label: "Storage", icon: <Download size={11} /> },
+  ];
+
   return (
     <div className="flex flex-col flex-1 min-h-0">
-      <div className="flex items-center gap-2 px-3 py-2 border-b border-zinc-700 shrink-0">
+      {/* Header */}
+      <div className="flex items-center gap-2 px-3 py-2 border-b border-zinc-800 shrink-0">
         <button onClick={onClose} className="text-zinc-500 hover:text-zinc-300 transition-colors p-0.5 rounded"><ChevronLeft size={15} /></button>
         <span className="text-[13px] glass-text">Settings</span>
+      </div>
+
+      {/* Tab bar */}
+      <div className="flex shrink-0 border-b border-zinc-800 bg-zinc-950 px-2 pt-2 gap-0.5">
+        {TABS.map(({ id, label, icon }) => (
+          <button key={id} onClick={() => setTab(id)}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-t text-[10px] font-semibold tracking-wide transition-colors
+              ${tab === id
+                ? "bg-zinc-900 border border-b-zinc-900 border-zinc-800 text-zinc-100 -mb-px pb-[7px]"
+                : "text-zinc-600 hover:text-zinc-400"}`}>
+            {icon}{label}
+          </button>
+        ))}
       </div>
 
       {showSetAppPasscode && (
@@ -1325,232 +1675,330 @@ function SettingsView({ onClose }) {
         />
       )}
 
-      <div className="flex-1 overflow-y-auto px-4 py-4 space-y-7 bg-zinc-950">
+      <div className="flex-1 overflow-y-auto px-4 py-4 space-y-6 bg-zinc-950">
 
-        {/* ── Theme ── */}
-        <section>
-          <div className="flex items-center gap-1.5 mb-3">
-            <Palette size={9} className="text-zinc-600" />
-            <span className="text-[9px] font-bold uppercase tracking-[0.16em] text-zinc-600">Theme</span>
-          </div>
-          <div className="flex gap-2">
-            {[
-              { value: "dark",  label: "Dark",  preview: "bg-zinc-900 border-zinc-700" },
-              { value: "light", label: "Light", preview: "bg-[#f5f1ec] border-[#d6d0c8]" },
-              { value: "red",   label: "Signal", preview: "bg-[#0e0508] border-[#4a1a28]" },
-            ].map(({ value, label, preview }) => (
-              <button key={value} onClick={() => setTheme(value)}
-                className={`flex-1 py-2 rounded-lg border text-[11px] font-bold transition-colors ${theme === value ? "border-[var(--accent)] text-[var(--accent)] bg-[var(--accent-bg)]" : "border-zinc-700 text-zinc-500 hover:text-zinc-300 hover:border-zinc-600"}`}>
-                <div className={`w-6 h-4 rounded mx-auto mb-1 border ${preview}`} />
-                {label}
-              </button>
-            ))}
-          </div>
-        </section>
-
-        {/* ── App Passcode ── */}
-        <section>
-          <div className="flex items-center gap-1.5 mb-3">
-            <Lock size={9} className="text-zinc-600" />
-            <span className="text-[9px] font-bold uppercase tracking-[0.16em] text-zinc-600">App Lock</span>
-          </div>
-          {appPasscode ? (
-            <div className="flex items-center gap-2">
-              <span className="text-[11px] text-zinc-400 flex-1">App is PIN-locked on startup</span>
-              <button onClick={() => setAppPasscode(null)}
-                className="px-3 py-1.5 rounded border border-red-900 bg-red-950 text-red-400 text-[11px] hover:bg-red-900 transition-colors">
-                Remove
-              </button>
-            </div>
-          ) : (
-            <button onClick={() => setShowSetAppPasscode(true)}
-              className="w-full flex items-center gap-2 px-3 py-2 rounded border border-zinc-700 bg-zinc-900 text-[11px] text-zinc-300 hover:text-white hover:bg-zinc-700 transition-colors">
-              <Lock size={11} /> Set app passcode
-            </button>
-          )}
-          <p className="text-[10px] text-zinc-700 mt-2">Locks the entire app on launch. Per-note locks available via note context menu.</p>
-        </section>
-
-        {/* ── Cloud Backup ── */}
-        <section>
-          <div className="flex items-center gap-1.5 mb-3">
-            <Cloud size={9} className="text-zinc-600" />
-            <span className="text-[9px] font-bold uppercase tracking-[0.16em] text-zinc-600">Cloud Backup</span>
-          </div>
-          <p className="text-[10px] text-zinc-600 mb-3">Point to your Dropbox or OneDrive folder path. Notes are copied there on backup.</p>
-          <div className="flex gap-2 mb-2">
-            <input
-              value={backupPathInput}
-              onChange={e => setBackupPathInput(e.target.value)}
-              placeholder="e.g. C:\Users\You\Dropbox\Notes"
-              className="flex-1 bg-zinc-800 border border-zinc-700 rounded px-2.5 py-1.5 text-[11px] text-zinc-200 focus:outline-none focus:border-zinc-500 placeholder:text-zinc-600"
-            />
-            <button onClick={() => setCloudBackupPath(backupPathInput)}
-              className="px-3 py-1.5 rounded border border-zinc-700 bg-zinc-900 text-[11px] text-zinc-300 hover:bg-zinc-700 hover:text-white transition-colors shrink-0">
-              Save
-            </button>
-          </div>
-          {cloudBackupPath && (
-            <div className="flex items-center gap-2">
-              <span className="text-[10px] text-zinc-600 truncate flex-1">{cloudBackupPath}</span>
-              <button onClick={async () => { setBackupStatus("Backing up…"); await runCloudBackup(); setBackupStatus("Done ✓"); setTimeout(() => setBackupStatus(""), 2500); }}
-                className="px-3 py-1.5 rounded border border-cyan-800 bg-cyan-950 text-cyan-300 text-[11px] hover:bg-cyan-900 transition-colors shrink-0">
-                Backup Now
-              </button>
-            </div>
-          )}
-          {backupStatus && <p className="text-[10px] text-cyan-400 mt-1">{backupStatus}</p>}
-        </section>
-
-        {/* ── Your Fonts ── */}
-        <section>
-          <div className="flex items-center gap-1.5 mb-3">
-            <Type size={9} className="text-zinc-600" />
-            <span className="text-[9px] font-bold uppercase tracking-[0.16em] text-zinc-600">Your Fonts</span>
-          </div>
-          {addedFonts.length > 0 && (
-            <div className="space-y-1.5 mb-3">
-              {addedFonts.map((font) => (
-                <div key={font} className="flex items-center justify-between px-3 py-2 rounded bg-zinc-800 border border-zinc-700/30">
-                  <span className="text-[13px] text-zinc-200" style={{ fontFamily: `'${font}', sans-serif` }}>{font}</span>
-                  <button onClick={() => removeFont(font)} className="text-zinc-600 hover:text-red-400 hover:bg-red-950 p-1 rounded transition-colors ml-2 shrink-0"><X size={11} /></button>
-                </div>
+        {/* ── APPEARANCE ── */}
+        {tab === "appearance" && (<>
+          <section>
+            <p className="section-label mb-3">Theme</p>
+            <div className="flex gap-2">
+              {[
+                { value: "dark", label: "Dark", preview: "bg-zinc-900 border-zinc-700" },
+                { value: "light", label: "Light", preview: "bg-[#f5f1ec] border-[#d6d0c8]" },
+                { value: "red", label: "Signal", preview: "bg-[#962f2f] border-[#c86060]" },
+              ].map(({ value, label, preview }) => (
+                <button key={value} onClick={() => setTheme(value)}
+                  className={`flex-1 py-2 rounded-lg border text-[11px] font-bold transition-colors ${theme === value ? "border-[var(--accent)] text-[var(--accent)] bg-[var(--accent-bg)]" : "border-zinc-700 text-zinc-500 hover:text-zinc-300 hover:border-zinc-600"}`}>
+                  <div className={`w-6 h-4 rounded mx-auto mb-1 border ${preview}`} />
+                  {label}
+                </button>
               ))}
             </div>
-          )}
-          {addedFonts.length === 0 && !showBrowser && <p className="text-[11px] text-zinc-600 mb-3">No fonts added yet.</p>}
-          {showBrowser ? (
-            <div className="border border-zinc-700 rounded overflow-hidden">
-              <div className="px-2 py-1.5 border-b border-zinc-800">
-                <input autoFocus value={browserSearch} onChange={(e) => setBrowserSearch(e.target.value)} placeholder="Search Google Fonts…"
-                  className="w-full bg-zinc-800 text-[11px] text-zinc-200 px-2.5 py-1.5 rounded border border-zinc-700 focus:outline-none placeholder:text-zinc-600" />
-              </div>
-              <div className="overflow-y-auto max-h-[180px] grid grid-cols-2 p-1.5 gap-0.5">
-                {availableInBrowser.map((font) => (
-                  <button key={font} onClick={() => addFont(font)} title={font}
-                    className="text-left px-3 py-1.5 rounded text-[12px] text-zinc-300 hover:bg-zinc-700 hover:text-white transition-colors truncate"
-                    style={{ fontFamily: `'${font}', sans-serif` }}>{font}</button>
-                ))}
-                {availableInBrowser.length === 0 && (
-                  <p className="col-span-2 py-5 text-center text-[10px] text-zinc-600">{browserSearch ? `No match for "${browserSearch}"` : "All fonts added!"}</p>
-                )}
-              </div>
-              <div className="border-t border-zinc-800 p-1.5">
-                <button onClick={() => { setShowBrowser(false); setBrowserSearch(""); }} className="w-full text-[10px] text-zinc-500 hover:text-zinc-300 py-1 transition-colors">Done</button>
-              </div>
+          </section>
+
+          <section>
+            <p className="section-label mb-1">Editor Toolbar</p>
+            <p className="text-[10px] text-zinc-600 mb-3">Choose which icons are always visible. Hidden ones appear under ···</p>
+            <div className="space-y-1">
+              {TOOLBAR_ICON_CONFIG.map(({ id, label }) => {
+                const on = toolbarVisible.has(id);
+                return (
+                  <button key={id} onClick={() => {
+                    const next = new Set(toolbarVisible);
+                    on ? next.delete(id) : next.add(id);
+                    setToolbarVisible([...next]);
+                  }}
+                    className={`w-full flex items-center justify-between px-3 py-2 rounded border text-[11px] transition-colors
+                      ${on ? "border-zinc-800 bg-zinc-500/10 text-zinc-300" : "border-zinc-700 bg-zinc-900 text-zinc-500 hover:text-zinc-300 hover:border-zinc-600"}`}>
+                    <span>{label}</span>
+                    <span className={`text-[8px] font-bold tracking-widest uppercase ${on ? "text-zinc-500" : "text-zinc-700"}`}>{on ? "Visible" : "Hidden"}</span>
+                  </button>
+                );
+              })}
             </div>
-          ) : (
-            <button onClick={() => setShowBrowser(true)} className="flex items-center gap-1.5 text-[11px] text-zinc-400 hover:text-cyan-400 transition-colors">
-              <Plus size={11} /> Browse Google Fonts
-            </button>
-          )}
-        </section>
+          </section>
 
-        {/* ── Save Format ── */}
-        <section>
-          <div className="flex items-center gap-1.5 mb-3">
-            <FileText size={9} className="text-zinc-600" />
-            <span className="text-[9px] font-bold uppercase tracking-[0.16em] text-zinc-600">Save Format</span>
-          </div>
-          <div className="flex gap-1.5 mb-2">
-            {[{ value: "md", label: ".md" }, { value: "txt", label: ".txt" }, { value: "ask", label: "Ask" }].map(({ value, label }) => (
-              <button key={value} onClick={() => setSaveFormat(value)}
-                className={`flex-1 py-1.5 rounded border text-[11px] font-mono transition-colors ${saveFormat === value ? "border-cyan-700 bg-cyan-950 text-cyan-300" : "border-zinc-700 bg-zinc-900 text-zinc-400 hover:text-zinc-200 hover:border-zinc-600"}`}>
-                {label}
-              </button>
-            ))}
-          </div>
-          <p className="text-[10px] text-zinc-600">
-            {saveFormat === "md" && "Notes are saved as Markdown files (.md)."}
-            {saveFormat === "txt" && "Notes are saved as plain text files (.txt)."}
-            {saveFormat === "ask" && "You'll be prompted to pick a format each time you explicitly save."}
-          </p>
-        </section>
-
-        {/* ── Toolbar ── */}
-        <section>
-          <div className="flex items-center gap-1.5 mb-1">
-            <MoreHorizontal size={9} className="text-zinc-600" />
-            <span className="text-[9px] font-bold uppercase tracking-[0.16em] text-zinc-600">Editor Toolbar</span>
-          </div>
-          <p className="text-[10px] text-zinc-600 mb-3">Choose which icons are always visible. Hidden ones appear under ···</p>
-          <div className="space-y-1">
-            {TOOLBAR_ICON_CONFIG.map(({ id, label }) => {
-              const on = toolbarVisible.has(id);
-              return (
-                <button key={id} onClick={() => {
-                  const next = new Set(toolbarVisible);
-                  on ? next.delete(id) : next.add(id);
-                  setToolbarVisible([...next]);
-                }}
-                  className={`w-full flex items-center justify-between px-3 py-2 rounded border text-[11px] transition-colors
-                    ${on
-                      ? "border-cyan-800 bg-cyan-500/10 text-cyan-300"
-                      : "border-zinc-700 bg-zinc-900 text-zinc-500 hover:text-zinc-300 hover:border-zinc-600"}`}>
-                  <span>{label}</span>
-                  <span className={`text-[8px] font-bold tracking-widest uppercase ${on ? "text-cyan-500" : "text-zinc-700"}`}>
-                    {on ? "Visible" : "Hidden"}
-                  </span>
-                </button>
-              );
-            })}
-          </div>
-        </section>
-
-        {/* ── Activity ── */}
-        <section>
-          <div className="flex items-center gap-1.5 mb-3">
-            <Hash size={9} className="text-zinc-600" />
-            <span className="text-[9px] font-bold uppercase tracking-[0.16em] text-zinc-600">Writing Activity</span>
-          </div>
-          <ActivityHeatmap notes={notes} />
-        </section>
-
-        {/* ── Data ── */}
-        <section>
-          <div className="flex items-center gap-1.5 mb-3">
-            <Download size={9} className="text-zinc-600" />
-            <span className="text-[9px] font-bold uppercase tracking-[0.16em] text-zinc-600">Data</span>
-          </div>
-          <div className="space-y-2">
-            <button onClick={handleExport} disabled={notes.length === 0}
-              className="w-full flex items-center gap-2 px-3 py-2 rounded border border-zinc-700 bg-zinc-900 text-[11px] text-zinc-300 hover:text-white hover:bg-zinc-700 transition-colors disabled:opacity-30 disabled:cursor-not-allowed">
-              <Download size={11} /> Export notes as JSON
-            </button>
-            <button onClick={handleOpenFolder}
-              className="w-full flex items-center gap-2 px-3 py-2 rounded border border-zinc-700 bg-zinc-900 text-[11px] text-zinc-300 hover:text-white hover:bg-zinc-700 transition-colors">
-              <BookOpen size={11} /> Open notes folder
-            </button>
-            {confirmClear ? (
-              <div className="flex items-center gap-2 px-1">
-                <span className="text-[10px] text-red-400 flex-1">Delete all {notes.length} note{notes.length !== 1 ? "s" : ""}?</span>
-                <button onClick={() => { clearNotes(); setConfirmClear(false); }} className="px-2.5 py-1 rounded text-[10px] bg-red-950 text-red-400 border border-red-900 hover:bg-red-900 transition-colors">Delete</button>
-                <button onClick={() => setConfirmClear(false)} className="px-2.5 py-1 rounded text-[10px] text-zinc-500 hover:text-zinc-300 transition-colors">Cancel</button>
+          <section>
+            <p className="section-label mb-3">Fonts</p>
+            {addedFonts.length > 0 && (
+              <div className="space-y-1.5 mb-3">
+                {addedFonts.map((font) => (
+                  <div key={font} className="flex items-center justify-between px-3 py-2 rounded bg-zinc-800 border border-zinc-700/30">
+                    <span className="text-[13px] text-zinc-200" style={{ fontFamily: `'${font}', sans-serif` }}>{font}</span>
+                    <button onClick={() => removeFont(font)} className="text-zinc-600 hover:text-red-400 hover:bg-red-950 p-1 rounded transition-colors ml-2 shrink-0"><X size={11} /></button>
+                  </div>
+                ))}
+              </div>
+            )}
+            {addedFonts.length === 0 && !showBrowser && <p className="text-[11px] text-zinc-600 mb-3">No fonts added yet.</p>}
+            {showBrowser ? (
+              <div className="border border-zinc-700 rounded overflow-hidden">
+                <div className="px-2 py-1.5 border-b border-zinc-800">
+                  <input autoFocus value={browserSearch} onChange={(e) => setBrowserSearch(e.target.value)} placeholder="Search Google Fonts…"
+                    className="w-full bg-zinc-800 text-[11px] text-zinc-200 px-2.5 py-1.5 rounded border border-zinc-700 focus:outline-none placeholder:text-zinc-600" />
+                </div>
+                <div className="overflow-y-auto max-h-[160px] grid grid-cols-2 p-1.5 gap-0.5">
+                  {availableInBrowser.map((font) => (
+                    <button key={font} onClick={() => addFont(font)} title={font}
+                      className="text-left px-3 py-1.5 rounded text-[12px] text-zinc-300 hover:bg-zinc-700 hover:text-white transition-colors truncate"
+                      style={{ fontFamily: `'${font}', sans-serif` }}>{font}</button>
+                  ))}
+                  {availableInBrowser.length === 0 && (
+                    <p className="col-span-2 py-5 text-center text-[10px] text-zinc-600">{browserSearch ? `No match for "${browserSearch}"` : "All fonts added!"}</p>
+                  )}
+                </div>
+                <div className="border-t border-zinc-800 p-1.5">
+                  <button onClick={() => { setShowBrowser(false); setBrowserSearch(""); }} className="w-full text-[10px] text-zinc-500 hover:text-zinc-300 py-1 transition-colors">Done</button>
+                </div>
               </div>
             ) : (
-              <button onClick={() => setConfirmClear(true)} disabled={notes.length === 0}
-                className="w-full flex items-center gap-2 px-3 py-2 rounded border border-zinc-700 bg-zinc-900 text-[11px] text-zinc-500 hover:text-red-400 hover:border-red-900 hover:bg-red-950 transition-colors disabled:opacity-30 disabled:cursor-not-allowed">
-                <Trash2 size={11} /> Clear all notes
+              <button onClick={() => setShowBrowser(true)} className="flex items-center gap-1.5 text-[11px] text-zinc-400 hover:text-zinc-100 transition-colors">
+                <Plus size={11} /> Browse Google Fonts
               </button>
             )}
-          </div>
-        </section>
+          </section>
 
-        {/* ── About ── */}
-        <section>
-          <div className="flex items-center gap-1.5 mb-3">
-            <span className="text-[9px] font-bold uppercase tracking-[0.16em] text-zinc-600">About</span>
-          </div>
-          <div className="px-3 py-3 rounded border border-zinc-800 bg-zinc-900/30">
-            <div className="flex items-center gap-2 mb-2">
-              <NotebookPen size={13} className="text-cyan-400" />
-              <span className="text-[12px] font-bold text-cyan-400 tracking-wider">SignalPad</span>
+          <section>
+            <p className="section-label mb-3">Card Layout</p>
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] text-zinc-300">Show pixel art panels</span>
+                <button onClick={() => setCardScenesEnabled(!cardScenesEnabled)}
+                  className={`w-9 h-5 rounded-full transition-colors relative ${cardScenesEnabled ? "bg-zinc-600" : "bg-zinc-700"}`}>
+                  <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-all ${cardScenesEnabled ? "left-[18px]" : "left-0.5"}`} />
+                </button>
+              </div>
+              <div>
+                <p className="text-[10px] text-zinc-500 mb-2">Card density</p>
+                <div className="flex gap-1.5">
+                  {[["compact", "Compact"], ["default", "Default"], ["spacious", "Spacious"]].map(([v, l]) => (
+                    <button key={v} onClick={() => setCardDensity(v)}
+                      className={`flex-1 py-1.5 rounded border text-[10px] transition-colors ${cardDensity === v ? "border-zinc-700 bg-zinc-950 text-zinc-300" : "border-zinc-700 bg-zinc-900 text-zinc-500 hover:text-zinc-200 hover:border-zinc-600"}`}>
+                      {l}
+                    </button>
+                  ))}
+                </div>
+              </div>
             </div>
-            <p className="text-[10px] text-zinc-600">Version 0.1.0</p>
-            <p className="text-[10px] text-zinc-700 mt-1">A minimal, focused note-taking app.</p>
-          </div>
-        </section>
+          </section>
 
+          <section>
+            <p className="section-label mb-2">Accent Color</p>
+            <div className="flex items-center gap-3">
+              <input type="color" value={accentColor || "#22d3ee"}
+                onChange={e => setAccentColor(e.target.value)}
+                className="w-8 h-8 rounded border border-zinc-700 bg-zinc-900 cursor-pointer p-0.5" />
+              <span className="text-[11px] text-zinc-400 font-mono flex-1">{accentColor || "theme default"}</span>
+              {accentColor && (
+                <button onClick={() => setAccentColor(null)}
+                  className="text-[10px] text-zinc-600 hover:text-zinc-300 transition-colors">Reset</button>
+              )}
+            </div>
+          </section>
+        </>)}
+
+        {/* ── WRITING ── */}
+        {tab === "writing" && (<>
+          <section>
+            <p className="section-label mb-1">Spellcheck</p>
+            <div className="flex items-center justify-between mb-3">
+              <span className="text-[11px] text-zinc-300">Enable spellcheck</span>
+              <button onClick={() => setSpellcheck(!spellcheck)}
+                className={`w-9 h-5 rounded-full transition-colors relative ${spellcheck ? "bg-zinc-600" : "bg-zinc-700"}`}>
+                <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-all ${spellcheck ? "left-[18px]" : "left-0.5"}`} />
+              </button>
+            </div>
+            {spellcheck && (
+              <div className="flex gap-1.5 flex-wrap">
+                {[["en-US", "English (US)"], ["en-GB", "English (UK)"], ["es", "Spanish"], ["fr", "French"], ["de", "German"]].map(([v, l]) => (
+                  <button key={v} onClick={() => setSpellcheckLang(v)}
+                    className={`px-2.5 py-1 rounded border text-[10px] transition-colors ${spellcheckLang === v ? "border-zinc-700 bg-zinc-950 text-zinc-300" : "border-zinc-700 bg-zinc-900 text-zinc-500 hover:text-zinc-200"}`}>
+                    {l}
+                  </button>
+                ))}
+              </div>
+            )}
+          </section>
+
+          <section>
+            <p className="section-label mb-2">Auto-save</p>
+            <div className="flex gap-1.5">
+              {[[0, "Manual"], [500, "0.5s"], [1000, "1s"], [2000, "2s"]].map(([v, l]) => (
+                <button key={v} onClick={() => setAutoSaveDelay(v)}
+                  className={`flex-1 py-1.5 rounded border text-[10px] transition-colors ${autoSaveDelay === v ? "border-zinc-700 bg-zinc-950 text-zinc-300" : "border-zinc-700 bg-zinc-900 text-zinc-500 hover:text-zinc-200 hover:border-zinc-600"}`}>
+                  {l}
+                </button>
+              ))}
+            </div>
+            <p className="text-[10px] text-zinc-700 mt-2">
+              {autoSaveDelay === 0 ? "Notes only save on Ctrl+S or when leaving the editor." : `Notes auto-save ${autoSaveDelay / 1000}s after you stop typing.`}
+            </p>
+          </section>
+
+          <section>
+            <p className="section-label mb-1">Default Note Template</p>
+            <p className="text-[10px] text-zinc-600 mb-2">Text shown in every new note. Each line becomes a paragraph.</p>
+            <textarea
+              value={defaultTemplate}
+              onChange={e => setDefaultTemplate(e.target.value)}
+              placeholder={"e.g.\nDate: \nContext:\n\n"}
+              rows={5}
+              className="w-full bg-zinc-800 border border-zinc-700 rounded px-2.5 py-2 text-[11px] text-zinc-200 font-mono resize-none focus:outline-none focus:border-zinc-500 placeholder:text-zinc-600"
+            />
+            {defaultTemplate && (
+              <button onClick={() => setDefaultTemplate("")}
+                className="text-[10px] text-zinc-600 hover:text-red-400 transition-colors mt-1">Clear template</button>
+            )}
+          </section>
+        </>)}
+
+        {/* ── SECURITY ── */}
+        {tab === "security" && (<>
+          <section>
+            <p className="section-label mb-3">App Lock</p>
+            {appPasscode ? (
+              <div className="flex items-center gap-2 px-3 py-2.5 rounded border border-zinc-700 bg-zinc-900">
+                <Lock size={12} className="text-zinc-100 shrink-0" />
+                <span className="text-[11px] text-zinc-300 flex-1">App is PIN-locked on startup</span>
+                <button onClick={() => setAppPasscode(null)}
+                  className="px-2.5 py-1 rounded border border-red-900 bg-red-950 text-red-400 text-[10px] hover:bg-red-900 transition-colors shrink-0">
+                  Remove
+                </button>
+              </div>
+            ) : (
+              <button onClick={() => setShowSetAppPasscode(true)}
+                className="w-full flex items-center gap-2 px-3 py-2.5 rounded border border-zinc-700 bg-zinc-900 text-[11px] text-zinc-400 hover:text-white hover:bg-zinc-800 transition-colors">
+                <Lock size={12} /> Set app passcode
+              </button>
+            )}
+            <p className="text-[10px] text-zinc-700 mt-2">Locks the entire app on launch. Per-note locks are available via the note context menu.</p>
+          </section>
+
+          <section>
+            <p className="section-label mb-2">Auto-lock After Inactivity</p>
+            <div className="flex gap-1.5">
+              {[[0, "Off"], [5, "5m"], [15, "15m"], [30, "30m"], [60, "1h"]].map(([v, l]) => (
+                <button key={v} onClick={() => setAutoLockMinutes(v)}
+                  className={`flex-1 py-1.5 rounded border text-[10px] transition-colors ${autoLockMinutes === v ? "border-zinc-700 bg-zinc-950 text-zinc-300" : "border-zinc-700 bg-zinc-900 text-zinc-500 hover:text-zinc-200 hover:border-zinc-600"}`}>
+                  {l}
+                </button>
+              ))}
+            </div>
+            <p className="text-[10px] text-zinc-700 mt-2">{autoLockMinutes === 0 ? "App will not auto-lock." : `App locks after ${autoLockMinutes} minute${autoLockMinutes > 1 ? "s" : ""} of inactivity.`}</p>
+          </section>
+        </>)}
+
+        {/* ── STORAGE ── */}
+        {tab === "storage" && (<>
+          <section>
+            <p className="section-label mb-2">Note Cap</p>
+            <div className="flex gap-1.5">
+              {[[5, "5"], [10, "10"], [15, "15"], [20, "20"], [0, "∞"]].map(([v, l]) => (
+                <button key={v} onClick={() => setNoteCap(v)}
+                  className={`flex-1 py-1.5 rounded border text-[10px] transition-colors ${noteCap === v ? "border-zinc-700 bg-zinc-950 text-zinc-300" : "border-zinc-700 bg-zinc-900 text-zinc-500 hover:text-zinc-200 hover:border-zinc-600"}`}>
+                  {l}
+                </button>
+              ))}
+            </div>
+            <p className="text-[10px] text-zinc-700 mt-2">{noteCap === 0 ? "No limit on number of notes." : `Maximum ${noteCap} notes. New notes are blocked when full.`}</p>
+          </section>
+
+          <section>
+            <p className="section-label mb-2">Auto-backup Schedule</p>
+            <div className="flex gap-1.5">
+              {[["manual", "Manual"], ["onclose", "On close"], ["hourly", "Hourly"], ["daily", "Daily"]].map(([v, l]) => (
+                <button key={v} onClick={() => setAutoBackupSchedule(v)}
+                  className={`flex-1 py-1.5 rounded border text-[10px] transition-colors ${autoBackupSchedule === v ? "border-zinc-700 bg-zinc-950 text-zinc-300" : "border-zinc-700 bg-zinc-900 text-zinc-500 hover:text-zinc-200 hover:border-zinc-600"}`}>
+                  {l}
+                </button>
+              ))}
+            </div>
+            {!cloudBackupPath && <p className="text-[10px] text-orange-500/70 mt-2">Set a backup path above to enable auto-backup.</p>}
+          </section>
+
+          <section>
+            <p className="section-label mb-2">Default Save Format</p>
+            <div className="flex gap-1.5 mb-2">
+              {[{ value: "md", label: ".md", desc: "Markdown" }, { value: "txt", label: ".txt", desc: "Plain text" }, { value: "ask", label: "Ask", desc: "Prompt each time" }].map(({ value, label, desc }) => (
+                <button key={value} onClick={() => setSaveFormat(value)}
+                  className={`flex-1 py-2 rounded border text-center transition-colors ${saveFormat === value ? "border-zinc-700 bg-zinc-950 text-zinc-300" : "border-zinc-700 bg-zinc-900 text-zinc-500 hover:text-zinc-200 hover:border-zinc-600"}`}>
+                  <p className="text-[11px] font-mono font-bold">{label}</p>
+                  <p className="text-[9px] mt-0.5 opacity-60">{desc}</p>
+                </button>
+              ))}
+            </div>
+          </section>
+
+          <section>
+            <p className="section-label mb-1">Cloud Backup</p>
+            <p className="text-[10px] text-zinc-600 mb-3">Path to your Dropbox or OneDrive folder. Notes are copied there on backup.</p>
+            <div className="flex gap-2 mb-2">
+              <input
+                value={backupPathInput}
+                onChange={e => setBackupPathInput(e.target.value)}
+                placeholder="e.g. C:\Users\You\Dropbox\Notes"
+                className="flex-1 bg-zinc-800 border border-zinc-700 rounded px-2.5 py-1.5 text-[11px] text-zinc-200 focus:outline-none focus:border-zinc-500 placeholder:text-zinc-600"
+              />
+              <button onClick={() => setCloudBackupPath(backupPathInput)}
+                className="px-3 py-1.5 rounded border border-zinc-700 bg-zinc-900 text-[11px] text-zinc-300 hover:bg-zinc-700 hover:text-white transition-colors shrink-0">
+                Save
+              </button>
+            </div>
+            {cloudBackupPath && (
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] text-zinc-600 truncate flex-1">{cloudBackupPath}</span>
+                <button onClick={async () => { setBackupStatus("Backing up…"); await runCloudBackup(); setBackupStatus("Done ✓"); setTimeout(() => setBackupStatus(""), 2500); }}
+                  className="px-3 py-1.5 rounded border border-zinc-800 bg-zinc-950 text-zinc-300 text-[11px] hover:bg-zinc-900 transition-colors shrink-0">
+                  Backup Now
+                </button>
+              </div>
+            )}
+            {backupStatus && <p className="text-[10px] text-zinc-100 mt-1">{backupStatus}</p>}
+          </section>
+
+          <section>
+            <p className="section-label mb-3">Data</p>
+            <div className="space-y-2">
+              <button onClick={handleExport} disabled={notes.length === 0}
+                className="w-full flex items-center gap-2 px-3 py-2 rounded border border-zinc-700 bg-zinc-900 text-[11px] text-zinc-300 hover:text-white hover:bg-zinc-700 transition-colors disabled:opacity-30 disabled:cursor-not-allowed">
+                <Download size={11} /> Export all notes as JSON
+              </button>
+              <button onClick={handleOpenFolder}
+                className="w-full flex items-center gap-2 px-3 py-2 rounded border border-zinc-700 bg-zinc-900 text-[11px] text-zinc-300 hover:text-white hover:bg-zinc-700 transition-colors">
+                <BookOpen size={11} /> Open notes folder
+              </button>
+              {confirmClear ? (
+                <div className="flex items-center gap-2 px-1">
+                  <span className="text-[10px] text-red-400 flex-1">Delete all {notes.length} note{notes.length !== 1 ? "s" : ""}?</span>
+                  <button onClick={() => { clearNotes(); setConfirmClear(false); }} className="px-2.5 py-1 rounded text-[10px] bg-red-950 text-red-400 border border-red-900 hover:bg-red-900 transition-colors">Delete</button>
+                  <button onClick={() => setConfirmClear(false)} className="px-2.5 py-1 rounded text-[10px] text-zinc-500 hover:text-zinc-300 transition-colors">Cancel</button>
+                </div>
+              ) : (
+                <button onClick={() => setConfirmClear(true)} disabled={notes.length === 0}
+                  className="w-full flex items-center gap-2 px-3 py-2 rounded border border-zinc-700 bg-zinc-900 text-[11px] text-zinc-500 hover:text-red-400 hover:border-red-900 hover:bg-red-950 transition-colors disabled:opacity-30 disabled:cursor-not-allowed">
+                  <Trash2 size={11} /> Clear all notes
+                </button>
+              )}
+            </div>
+          </section>
+
+          <section>
+            <div className="px-3 py-3 rounded border border-zinc-800 bg-zinc-900/30">
+              <div className="flex items-center gap-2 mb-1">
+                <NotebookPen size={12} className="app-name" />
+                <span className="text-[11px] font-bold tracking-wider app-name">SignalPad</span>
+              </div>
+              <p className="text-[10px] text-zinc-600">Version 0.1.0 · A minimal, focused note-taking app.</p>
+            </div>
+          </section>
+        </>)}
+
+      </div>
+
+      {/* ── Permanent activity footer ── */}
+      <div className="shrink-0 border-t border-zinc-800 bg-zinc-950 px-4 py-3">
+        <p className="section-label mb-2">Writing Activity</p>
+        <ActivityHeatmap notes={notes} />
       </div>
     </div>
   );
@@ -1559,56 +2007,56 @@ function SettingsView({ onClose }) {
 // ─── Help view ───────────────────────────────────────────────────────────────
 
 const SHORTCUTS = [
-  { keys: "Ctrl+S",         desc: "Save note" },
-  { keys: "Ctrl+Shift+N",   desc: "Quick capture from anywhere (global)" },
-  { keys: "Ctrl+K",         desc: "Open command palette" },
-  { keys: "Esc",            desc: "Close palette / exit zen mode" },
+  { keys: "Ctrl+S", desc: "Save note" },
+  { keys: "Ctrl+Shift+N", desc: "Quick capture from anywhere (global)" },
+  { keys: "Ctrl+K", desc: "Open command palette" },
+  { keys: "Esc", desc: "Close palette / exit zen mode" },
 ];
 
 const FEATURE_SECTIONS = [
   {
     heading: "Writing",
     items: [
-      { icon: "✦",  label: "Note emoji",          desc: "Tap the smiley in the editor header to give a note an emoji icon." },
-      { icon: "●",  label: "Note colour tint",     desc: "Tap the colour circle to tint the note card and editor with a hue." },
-      { icon: "🔥", label: "Burn after reading",   desc: "The flame toggle marks a note to self-delete the moment you close it." },
-      { icon: "📷", label: "Snapshots",            desc: "Camera icon saves a timestamped copy of the content. History icon browses and restores past snapshots." },
-      { icon: "⊞",  label: "Copy as Markdown",     desc: "Copy button converts the note's rich-text content to clean Markdown and puts it on the clipboard." },
+      { icon: "✦", label: "Note emoji", desc: "Tap the smiley in the editor header to give a note an emoji icon." },
+      { icon: "●", label: "Note colour tint", desc: "Tap the colour circle to tint the note card and editor with a hue." },
+      { icon: "🔥", label: "Burn after reading", desc: "The flame toggle marks a note to self-delete the moment you close it." },
+      { icon: "📷", label: "Snapshots", desc: "Camera icon saves a timestamped copy of the content. History icon browses and restores past snapshots." },
+      { icon: "⊞", label: "Copy as Markdown", desc: "Copy button converts the note's rich-text content to clean Markdown and puts it on the clipboard." },
     ],
   },
   {
     heading: "Views",
     items: [
-      { icon: "MD", label: "Markdown preview",     desc: "Renders your note's plain text as Markdown — headings, code blocks, tables, blockquotes." },
-      { icon: "⊡",  label: "Zen mode",             desc: "Maximize icon strips all chrome away. Only the text remains. Press Esc or the corner button to exit." },
-      { icon: "≡",  label: "Typewriter mode",      desc: "Align-center icon keeps the active line vertically centred and fades surrounding text." },
+      { icon: "MD", label: "Markdown preview", desc: "Renders your note's plain text as Markdown — headings, code blocks, tables, blockquotes." },
+      { icon: "⊡", label: "Zen mode", desc: "Maximize icon strips all chrome away. Only the text remains. Press Esc or the corner button to exit." },
+      { icon: "≡", label: "Typewriter mode", desc: "Align-center icon keeps the active line vertically centred and fades surrounding text." },
     ],
   },
   {
     heading: "Organisation",
     items: [
-      { icon: "#",  label: "Hashtag collections",  desc: "Type #tagname anywhere in a note. A filter bar appears above the list so you can browse by tag." },
-      { icon: "⟦⟧", label: "Wiki links",           desc: "Type [[Note title]] to create a clickable link that jumps to another note." },
-      { icon: "⠿",  label: "Drag to reorder",      desc: "Grab the grip handle on any unpinned note card to drag it into a custom order." },
-      { icon: "📌", label: "Pin notes",             desc: "Pinned notes are read-only by default and always shown at the top of the list." },
+      { icon: "#", label: "Hashtag collections", desc: "Type #tagname anywhere in a note. A filter bar appears above the list so you can browse by tag." },
+      { icon: "⟦⟧", label: "Wiki links", desc: "Type [[Note title]] to create a clickable link that jumps to another note." },
+      { icon: "⠿", label: "Drag to reorder", desc: "Grab the grip handle on any unpinned note card to drag it into a custom order." },
+      { icon: "📌", label: "Pin notes", desc: "Pinned notes are read-only by default and always shown at the top of the list." },
     ],
   },
   {
     heading: "Tools",
     items: [
-      { icon: "⌘K", label: "Command palette",      desc: "Search notes by title, create, pin, or delete — all from the keyboard." },
-      { icon: "♪",  label: "Ambient sound",         desc: "Speaker icon in the title bar: Rain, Brown Noise, White Noise, Focus Hum, or Deep Space." },
-      { icon: "⊞",  label: "Activity heatmap",      desc: "Settings → Writing Activity shows a GitHub-style grid of your daily edit history." },
-      { icon: "↑",  label: "Import",                desc: "Import any .md or .txt file from disk. SignalPad frontmatter is preserved; plain text is wrapped into a new note." },
-      { icon: "↓",  label: "Export",                desc: "Settings → Data → Export all notes as a single JSON file." },
-      { icon: "📂", label: "Save to…",              desc: "In Ask save-format mode, the folder icon opens a native Save As dialog so you can choose any location." },
+      { icon: "⌘K", label: "Command palette", desc: "Search notes by title, create, pin, or delete — all from the keyboard." },
+      { icon: "♪", label: "Ambient sound", desc: "Speaker icon in the title bar: Rain, Brown Noise, White Noise, Focus Hum, or Deep Space." },
+      { icon: "⊞", label: "Activity heatmap", desc: "Settings → Writing Activity shows a GitHub-style grid of your daily edit history." },
+      { icon: "↑", label: "Import", desc: "Import any .md or .txt file from disk. SignalPad frontmatter is preserved; plain text is wrapped into a new note." },
+      { icon: "↓", label: "Export", desc: "Settings → Data → Export all notes as a single JSON file." },
+      { icon: "📂", label: "Save to…", desc: "In Ask save-format mode, the folder icon opens a native Save As dialog so you can choose any location." },
     ],
   },
   {
     heading: "Fonts & Format",
     items: [
-      { icon: "Aa", label: "Google Fonts",          desc: "Toolbar → T dropdown → Browse Google Fonts to add any of 44 typefaces and apply them per-selection." },
-      { icon: ".md", label: "Save format",          desc: "Settings → Save Format: .md (Markdown), .txt (plain text), or Ask (prompts on each explicit save)." },
+      { icon: "Aa", label: "Google Fonts", desc: "Toolbar → T dropdown → Browse Google Fonts to add any of 44 typefaces and apply them per-selection." },
+      { icon: ".md", label: "Save format", desc: "Settings → Save Format: .md (Markdown), .txt (plain text), or Ask (prompts on each explicit save)." },
     ],
   },
 ];
@@ -1628,7 +2076,7 @@ function HelpView({ onClose }) {
         {/* ── Quick start ── */}
         <section>
           <div className="flex items-center gap-1.5 mb-3">
-            <span className="text-[9px] font-bold uppercase tracking-[0.16em] text-zinc-600">Quick Start</span>
+            <span className="section-label">Quick Start</span>
           </div>
           <ol className="space-y-2 list-none">
             {[
@@ -1639,7 +2087,7 @@ function HelpView({ onClose }) {
               "Open the command palette with Ctrl+K to jump between notes instantly.",
             ].map((step, i) => (
               <li key={i} className="flex items-start gap-2.5">
-                <span className="shrink-0 w-4 h-4 rounded-full bg-cyan-950 border border-cyan-800 text-cyan-400 text-[8px] font-bold flex items-center justify-center mt-0.5">{i + 1}</span>
+                <span className="shrink-0 w-4 h-4 rounded-full bg-zinc-950 border border-zinc-800 text-zinc-100 text-[8px] font-bold flex items-center justify-center mt-0.5">{i + 1}</span>
                 <span className="text-[11px] text-zinc-400 leading-relaxed">{step}</span>
               </li>
             ))}
@@ -1649,7 +2097,7 @@ function HelpView({ onClose }) {
         {/* ── Keyboard shortcuts ── */}
         <section>
           <div className="flex items-center gap-1.5 mb-3">
-            <span className="text-[9px] font-bold uppercase tracking-[0.16em] text-zinc-600">Keyboard Shortcuts</span>
+            <span className="section-label">Keyboard Shortcuts</span>
           </div>
           <div className="space-y-1.5">
             {SHORTCUTS.map(({ keys, desc }) => (
@@ -1665,7 +2113,7 @@ function HelpView({ onClose }) {
         {FEATURE_SECTIONS.map(({ heading, items }) => (
           <section key={heading}>
             <div className="flex items-center gap-1.5 mb-3">
-              <span className="text-[9px] font-bold uppercase tracking-[0.16em] text-zinc-600">{heading}</span>
+              <span className="section-label">{heading}</span>
             </div>
             <div className="space-y-2.5">
               {items.map(({ icon, label, desc }) => (
@@ -1689,9 +2137,9 @@ function HelpView({ onClose }) {
             onClick={() => setShowChangelog(true)}
             className="w-full px-3 py-3 rounded border border-zinc-800 bg-zinc-900/30 flex items-center gap-2 hover:border-zinc-700 hover:bg-zinc-800/40 transition-colors text-left"
           >
-            <NotebookPen size={13} className="text-cyan-400 shrink-0" />
+            <NotebookPen size={13} className="app-name shrink-0" />
             <div>
-              <span className="text-[12px] font-bold text-cyan-400 tracking-wider">SignalPad</span>
+              <span className="text-[12px] font-bold tracking-wider app-name">SignalPad</span>
               <span className="text-[10px] text-zinc-600 ml-2">v{changelog.history[0]?.version ?? "0.1.0"}</span>
             </div>
             <span className="ml-auto text-[9px] text-zinc-700 hover:text-zinc-500 transition-colors">Patch notes</span>
@@ -1706,42 +2154,104 @@ function HelpView({ onClose }) {
 // ─── Main SignalPad ───────────────────────────────────────────────────────────
 
 export default function SignalPad() {
-  const { notes, addNote, updateNote, deleteNote, togglePin, init, loading, importNote, reorderNotes, noteOrder, appPasscode, noteScenes, setNoteScene } = useSignalPadStore();
+  const { notes, addNote, updateNote, deleteNote, togglePin, init, loading, importNote, importDocxNote, noteOrder, appPasscode, noteScenes, setNoteScene, accentColor, autoLockMinutes, autoBackupSchedule, cloudBackupPath, runCloudBackup, noteCap, cardScenesEnabled, cardDensity } = useSignalPadStore();
 
-  const [activeId, setActiveId]         = useState(null);
+  const [openTabs, setOpenTabs] = useState([]);
+  const [activeTabId, setActiveTabId] = useState(null);
   const [showSettings, setShowSettings] = useState(false);
-  const [showHelp, setShowHelp]         = useState(false);
-  const [mdPreview, setMdPreview]       = useState(false);
-  const [zenMode, setZenMode]           = useState(false);
-  const [showPalette, setShowPalette]   = useState(false);
+  const [showHelp, setShowHelp] = useState(false);
+  const [mdPreview, setMdPreview] = useState(false);
+  const [zenMode, setZenMode] = useState(false);
+  const [showPalette, setShowPalette] = useState(false);
   const [showChangelog, setShowChangelog] = useState(false);
-  const [activeTag, setActiveTag]       = useState(null);
-  const [dragId, setDragId]             = useState(null);
-  const [dragOverId, setDragOverId]     = useState(null);
-  const [contextMenu, setContextMenu]   = useState(null);
-  const [appUnlocked, setAppUnlocked]   = useState(!appPasscode);
+  const [activeTag, setActiveTag] = useState(null);
+  const [dragId, setDragId] = useState(null);
+  const [dragOverId, setDragOverId] = useState(null);
+  const [contextMenu, setContextMenu] = useState(null);
+  const [appUnlocked, setAppUnlocked] = useState(!appPasscode);
 
-  const openSettings = () => { setShowSettings(true);  setShowHelp(false); };
-  const openHelp     = () => { setShowHelp(true);      setShowSettings(false); };
-  const closePanel   = () => { setShowSettings(false); setShowHelp(false); };
+  const openSettings = () => { setShowSettings(true); setShowHelp(false); };
+  const openHelp = () => { setShowHelp(true); setShowSettings(false); };
+  const closePanel = () => { setShowSettings(false); setShowHelp(false); };
+
+  const [capWarning, setCapWarning] = useState(false);
+  const [editorWordCount, setEditorWordCount] = useState(0);
+
+  const openTab = useCallback((id) => {
+    setOpenTabs((prev) => prev.includes(id) ? prev : [...prev, id]);
+    setActiveTabId(id);
+  }, []);
+
+  const closeTab = useCallback((id) => {
+    setOpenTabs((prev) => {
+      const next = prev.filter((t) => t !== id);
+      setActiveTabId((cur) => {
+        if (cur !== id) return cur;
+        const idx = prev.indexOf(id);
+        return next[idx] ?? next[idx - 1] ?? null;
+      });
+      return next;
+    });
+    setEditorWordCount(0);
+  }, []);
 
   useEffect(() => { init(); }, []);
-  useEffect(() => { setMdPreview(false); setZenMode(false); }, [activeId]);
+  useEffect(() => { setMdPreview(false); setZenMode(false); }, [activeTabId]);
+
+  // ── Accent color ─────────────────────────────────────────────────────────
+  useEffect(() => {
+    const root = document.documentElement;
+    if (accentColor) {
+      root.style.setProperty("--accent", accentColor);
+      const r = parseInt(accentColor.slice(1, 3), 16), g = parseInt(accentColor.slice(3, 5), 16), b = parseInt(accentColor.slice(5, 7), 16);
+      root.style.setProperty("--accent-bg", `rgba(${r},${g},${b},0.12)`);
+    } else {
+      root.style.removeProperty("--accent");
+      root.style.removeProperty("--accent-bg");
+    }
+  }, [accentColor]);
+
+  // ── Auto-lock on inactivity ──────────────────────────────────────────────
+  useEffect(() => {
+    if (!appPasscode || !autoLockMinutes || !appUnlocked) return;
+    let timer;
+    const reset = () => { clearTimeout(timer); timer = setTimeout(() => setAppUnlocked(false), autoLockMinutes * 60_000); };
+    const events = ["mousemove", "keydown", "mousedown", "touchstart"];
+    events.forEach(ev => document.addEventListener(ev, reset));
+    reset();
+    return () => { clearTimeout(timer); events.forEach(ev => document.removeEventListener(ev, reset)); };
+  }, [appPasscode, autoLockMinutes, appUnlocked]);
+
+  // ── Auto-backup schedule ─────────────────────────────────────────────────
+  useEffect(() => {
+    if (!cloudBackupPath || autoBackupSchedule === "manual") return;
+    if (autoBackupSchedule === "onclose") {
+      const win = getCurrentWindow();
+      let unlisten;
+      win.onCloseRequested(async (ev) => { ev.preventDefault(); await runCloudBackup(); win.destroy(); }).then(u => { unlisten = u; });
+      return () => { unlisten?.(); };
+    }
+    const ms = autoBackupSchedule === "hourly" ? 3_600_000 : 86_400_000;
+    const id = setInterval(() => runCloudBackup(), ms);
+    return () => clearInterval(id);
+  }, [cloudBackupPath, autoBackupSchedule]);
 
   // ── Resize window when switching between list and editor ─────────────────
   useEffect(() => {
     const win = getCurrentWindow();
-    const inEditor = !!activeId;
+    const inEditor = openTabs.length > 0;
     if (inEditor) {
-      win.setResizable(true).catch(() => {});
-      win.setSize(new LogicalSize(680, 720)).catch(() => {});
-      win.setMinSize(new LogicalSize(560, 580)).catch(() => {});
+      win.setResizable(true).catch(() => { });
+      win.setMaxSize(null).catch(() => { });
+      win.setMinSize(new LogicalSize(560, 580)).catch(() => { });
+      win.setSize(new LogicalSize(680, 720)).catch(() => { });
     } else {
-      win.setSize(new LogicalSize(560, 660)).catch(() => {});
-      win.setMinSize(new LogicalSize(560, 660)).catch(() => {});
-      win.setResizable(false).catch(() => {});
+      win.setMaxSize(new LogicalSize(560, 660)).catch(() => { });
+      win.setMinSize(new LogicalSize(560, 660)).catch(() => { });
+      win.setSize(new LogicalSize(560, 660)).catch(() => { });
+      win.setResizable(false).catch(() => { });
     }
-  }, [activeId]);
+  }, [openTabs.length]);
 
   // ── Suppress default browser context menu globally ────────────────────────
   useEffect(() => {
@@ -1753,10 +2263,10 @@ export default function SignalPad() {
   // ── Global hotkey (Ctrl+Shift+N) ─────────────────────────────────────────
   useEffect(() => {
     registerShortcut("CommandOrControl+Shift+N", async () => {
-      await invoke("focus_main_window").catch(() => {});
+      await invoke("focus_main_window").catch(() => { });
       const id = await addNote();
-      if (id) setActiveId(id);
-    }).catch(() => {});
+      if (id) openTab(id);
+    }).catch(() => { });
   }, []);
 
   // ── Ctrl+K command palette ───────────────────────────────────────────────
@@ -1769,8 +2279,8 @@ export default function SignalPad() {
     return () => window.removeEventListener("keydown", handler);
   }, []);
 
-  const activeNote = notes.find((n) => n.id === activeId);
-  const pinned     = notes.filter((n) => n.pinned);
+  const activeNote = notes.find((n) => n.id === activeTabId);
+  const pinned = notes.filter((n) => n.pinned);
 
   // Apply custom order to unpinned notes
   const unpinned = [...notes.filter((n) => !n.pinned)].sort((a, b) => {
@@ -1791,25 +2301,54 @@ export default function SignalPad() {
     ? pinned.filter((n) => extractTags(n.content).includes(activeTag))
     : pinned;
 
-  // ── Drag-to-reorder ───────────────────────────────────────────────────────
-  const handleDragStart = (e, id) => { e.dataTransfer.setData("text/plain", id); e.dataTransfer.effectAllowed = "move"; setDragId(id); };
-  const handleDragOver = (e, id) => { e.preventDefault(); e.dataTransfer.dropEffect = "move"; setDragOverId(id); };
-  const handleDrop = (targetId) => {
-    if (!dragId || dragId === targetId) { setDragId(null); setDragOverId(null); return; }
-    const ids = unpinned.map((n) => n.id);
-    const from = ids.indexOf(dragId);
-    const to   = ids.indexOf(targetId);
-    if (from < 0 || to < 0) { setDragId(null); setDragOverId(null); return; }
-    ids.splice(from, 1);
-    ids.splice(to, 0, dragId);
-    reorderNotes(ids);
-    setDragId(null); setDragOverId(null);
-  };
+  // ── Drag-to-reorder (pointer-event based) ────────────────────────────────
+  const pointerDrag = useRef({ active: false, id: null, overId: null });
+
+  const handleGripPointerDown = useCallback((_e, noteId) => {
+    pointerDrag.current = { active: true, id: noteId, overId: null };
+    setDragId(noteId);
+
+    const onMove = (mv) => {
+      if (!pointerDrag.current.active) return;
+      const els = document.elementsFromPoint(mv.clientX, mv.clientY);
+      const cardEl = els.find(el => el.dataset?.noteId && el.dataset.noteId !== noteId);
+      const overId = cardEl?.dataset.noteId ?? null;
+      if (overId !== pointerDrag.current.overId) {
+        pointerDrag.current.overId = overId;
+        setDragOverId(overId);
+      }
+    };
+
+    const onUp = () => {
+      const { id, overId } = pointerDrag.current;
+      if (id && overId && id !== overId) {
+        const { notes: cur, noteOrder: ord, reorderNotes: reorder } = useSignalPadStore.getState();
+        const unpinnedIds = [...cur.filter(n => !n.pinned)]
+          .sort((a, b) => { const ai = ord.indexOf(a.id), bi = ord.indexOf(b.id); return (ai >= 0 && bi >= 0) ? ai - bi : ai >= 0 ? -1 : bi >= 0 ? 1 : 0; })
+          .map(n => n.id);
+        const from = unpinnedIds.indexOf(id);
+        const to = unpinnedIds.indexOf(overId);
+        if (from >= 0 && to >= 0) {
+          unpinnedIds.splice(from, 1);
+          unpinnedIds.splice(to, 0, id);
+          reorder(unpinnedIds);
+        }
+      }
+      pointerDrag.current = { active: false, id: null, overId: null };
+      setDragId(null);
+      setDragOverId(null);
+      document.removeEventListener('pointermove', onMove);
+      document.removeEventListener('pointerup', onUp);
+    };
+
+    document.addEventListener('pointermove', onMove);
+    document.addEventListener('pointerup', onUp);
+  }, []);
 
   // ── Wiki navigate ─────────────────────────────────────────────────────────
   const handleWikiNavigate = (title) => {
     const target = notes.find((n) => (n.title || "Untitled").toLowerCase() === title.toLowerCase());
-    if (target) setActiveId(target.id);
+    if (target) openTab(target.id);
   };
 
   // ── Context menu builders ─────────────────────────────────────────────────
@@ -1819,10 +2358,10 @@ export default function SignalPad() {
     setContextMenu({
       x: e.clientX, y: e.clientY,
       items: [
-        { icon: <BookOpen size={11} />, label: "Open", action: () => setActiveId(n.id) },
+        { icon: <BookOpen size={11} />, label: "Open", action: () => openTab(n.id) },
         { separator: true },
         { icon: n.pinned ? <PinOff size={11} /> : <Pin size={11} />, label: n.pinned ? "Unpin" : "Pin", action: () => togglePin(n.id) },
-        { icon: <FolderOpen size={11} />, label: "Reveal in Folder", action: () => invoke("reveal_note", { noteId: n.id, fileExt: n.fileExt || "md" }) },
+        { icon: <FolderOpen size={13} />, label: "Reveal in Folder", action: () => invoke("reveal_note", { noteId: n.id, fileExt: n.fileExt || "md" }) },
         { separator: true },
         { icon: <Trash2 size={11} />, label: "Delete", danger: true, action: () => { if (window.confirm(`Delete "${n.title || "Untitled"}"?`)) deleteNote(n.id); } },
       ],
@@ -1834,21 +2373,34 @@ export default function SignalPad() {
     setContextMenu({
       x: e.clientX, y: e.clientY,
       items: [
-        { icon: <Plus size={11} />,      label: "New Note",          shortcut: "Ctrl+Shift+N", action: handleNew },
-        { icon: <Upload size={11} />,    label: "Import",            action: handleImport },
+        { icon: <Plus size={11} />, label: "New Note", shortcut: "Ctrl+Shift+N", action: handleNew },
+        { icon: <Upload size={11} />, label: "Import", action: handleImport },
         { separator: true },
-        { icon: <FolderOpen size={11} />,label: "Open Notes Folder", action: () => invoke("get_notes_dir").then((dir) => invoke("open_folder", { path: dir })) },
-        { icon: <Settings size={11} />,  label: "Settings",          action: openSettings },
+        { icon: <FolderOpen size={13} />, label: "Open Notes Folder", action: () => invoke("get_notes_dir").then((dir) => invoke("open_folder", { path: dir })) },
+        { icon: <Settings size={11} />, label: "Settings", action: openSettings },
       ],
     });
   };
 
-  const handleNew = async () => { const id = await addNote(); if (id) setActiveId(id); };
+  const handleNew = async () => {
+    if (noteCap > 0 && notes.length >= noteCap) {
+      setCapWarning(true);
+      setTimeout(() => setCapWarning(false), 3000);
+      return;
+    }
+    const id = await addNote();
+    if (id) openTab(id);
+  };
   const handleImport = async () => {
-    const path = await openDialog({ multiple: false, filters: [{ name: "Notes", extensions: ["md", "txt"] }] });
+    const path = await openDialog({ multiple: false, filters: [{ name: "Documents", extensions: ["md", "txt", "docx"] }] });
     if (!path) return;
-    const id = await importNote(path);
-    if (id) setActiveId(id);
+    let id;
+    if (path.toLowerCase().endsWith(".docx")) {
+      id = await importDocxNote(path);
+    } else {
+      id = await importNote(path);
+    }
+    if (id) openTab(id);
   };
 
   if (!appUnlocked) {
@@ -1885,9 +2437,9 @@ export default function SignalPad() {
         <CommandPalette
           notes={notes}
           onClose={() => setShowPalette(false)}
-          onNavigate={(id) => setActiveId(id)}
+          onNavigate={(id) => openTab(id)}
           onNew={handleNew}
-          onDelete={(id) => { deleteNote(id); if (activeId === id) setActiveId(null); }}
+          onDelete={(id) => { deleteNote(id); closeTab(id); }}
           onTogglePin={(id) => togglePin(id)}
         />
       )}
@@ -1900,63 +2452,95 @@ export default function SignalPad() {
         {/* Title bar (hidden in zen mode) */}
         {!zenMode && (
           <div data-tauri-drag-region
-            className="flex items-center justify-between px-4 py-2.5 border-b border-zinc-800 bg-zinc-950 shrink-0 select-none cursor-default">
+            className="flex items-center justify-between px-4 py-3 border-b border-zinc-800 bg-zinc-950 shrink-0 select-none cursor-default">
             <div className="flex items-center gap-2" data-tauri-drag-region>
-              <NotebookPen size={13} className="text-cyan-400 pointer-events-none" />
-              <span className="text-[11px] font-bold tracking-[0.18em] uppercase text-cyan-400 pointer-events-none">SignalPad</span>
+              <NotebookPen size={15} className="app-name pointer-events-none" />
+              <span className="text-[12px] font-bold tracking-[0.18em] uppercase pointer-events-none app-name">SignalPad</span>
               <button
                 onClick={() => setShowChangelog(true)}
                 title="View patch notes"
-                className="text-[9px] font-mono text-zinc-600 hover:text-cyan-500 hover:bg-zinc-800 transition-colors px-1 py-0.5 rounded leading-none"
+                className="text-[10px] font-mono text-zinc-600 hover:text-zinc-500 hover:bg-zinc-800 transition-colors px-1 py-0.5 rounded leading-none"
               >
                 v{changelog.history[0]?.version ?? "0.1.0"}
               </button>
               {showSettings && (
-                <><span className="text-zinc-700 text-[10px] pointer-events-none">/</span>
-                  <span className="text-[11px] text-zinc-400 pointer-events-none">Settings</span></>
+                <><span className="text-zinc-700 text-[11px] pointer-events-none">/</span>
+                  <span className="text-[12px] text-zinc-400 pointer-events-none">Settings</span></>
               )}
               {showHelp && (
-                <><span className="text-zinc-700 text-[10px] pointer-events-none">/</span>
-                  <span className="text-[11px] text-zinc-400 pointer-events-none">Help</span></>
+                <><span className="text-zinc-700 text-[11px] pointer-events-none">/</span>
+                  <span className="text-[12px] text-zinc-400 pointer-events-none">Help</span></>
               )}
               {!showSettings && !showHelp && activeNote && (
-                <><span className="text-zinc-700 text-[10px] pointer-events-none">/</span>
-                  <span className="text-[11px] text-zinc-400 truncate max-w-[150px] pointer-events-none">
+                <><span className="text-zinc-700 text-[11px] pointer-events-none">/</span>
+                  <span className="text-[12px] text-zinc-400 truncate max-w-[150px] pointer-events-none">
                     {activeNote.emoji && <span className="mr-1">{activeNote.emoji}</span>}
                     {activeNote.title || "Untitled"}
                   </span></>
               )}
             </div>
-            <div className="flex items-center gap-1.5">
+            <div className="flex items-center gap-2">
               <AmbientSound />
               <button onClick={() => setShowPalette((s) => !s)} title="Command palette (Ctrl+K)"
-                className="w-6 h-6 flex items-center justify-center rounded text-zinc-600 hover:text-zinc-300 hover:bg-zinc-700 transition-colors text-[10px] font-mono">
+                className="w-7 h-7 flex items-center justify-center rounded text-zinc-600 hover:text-zinc-300 hover:bg-zinc-700 transition-colors text-[11px] font-mono leading-none">
                 ⌘K
               </button>
-              <button onClick={() => (showHelp ? closePanel() : openHelp())} title="Help"
-                className={`w-6 h-6 flex items-center justify-center rounded transition-colors ${showHelp ? "text-cyan-400 bg-cyan-950" : "text-zinc-600 hover:text-zinc-300 hover:bg-zinc-700"}`}>
-                <HelpCircle size={12} />
-              </button>
               <button onClick={() => (showSettings ? closePanel() : openSettings())} title="Settings"
-                className={`w-6 h-6 flex items-center justify-center rounded transition-colors ${showSettings ? "text-cyan-400 bg-cyan-950" : "text-zinc-600 hover:text-zinc-300 hover:bg-zinc-700"}`}>
-                <Settings size={12} />
+                className={`w-7 h-7 flex items-center justify-center rounded transition-colors ${showSettings ? "text-zinc-100 bg-zinc-950" : "text-zinc-600 hover:text-zinc-300 hover:bg-zinc-700"}`}>
+                <Settings size={14} />
               </button>
               <WindowControls />
             </div>
           </div>
         )}
 
-        {/* Tag filter bar */}
-        {!showSettings && !showHelp && !activeNote && !zenMode && allTags.length > 0 && (
+        {/* Tab bar — shown when notes are open */}
+        {!showSettings && !showHelp && openTabs.length > 0 && !zenMode && (
+          <div className="sp-tab-bar shrink-0">
+            {/* Home button — returns to note list without closing tabs */}
+            <button
+              onClick={() => setActiveTabId(null)}
+              title="All notes"
+              className={`flex items-center justify-center px-2.5 py-1.5 border-r border-zinc-800 shrink-0 transition-colors ${activeTabId === null ? "bg-zinc-900 text-zinc-300" : "text-zinc-600 hover:text-zinc-300 hover:bg-zinc-800/50"}`}>
+              <BookOpen size={11} />
+            </button>
+            {openTabs.map((tabId) => {
+              const tn = notes.find((n) => n.id === tabId);
+              if (!tn) return null;
+              const isActive = tabId === activeTabId;
+              return (
+                <button key={tabId} onClick={() => setActiveTabId(tabId)}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 text-[11px] border-r border-zinc-800 shrink-0 max-w-[140px] transition-colors ${isActive ? "bg-zinc-900 text-zinc-100 border-b border-b-zinc-900" : "text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/50"}`}>
+                  {tn.emoji && <span className="text-[10px] leading-none">{tn.emoji}</span>}
+                  <span className="truncate flex-1">{tn.title || "Untitled"}</span>
+                  <span
+                    role="button"
+                    aria-label="Close tab"
+                    onMouseDown={(e) => { e.stopPropagation(); e.preventDefault(); closeTab(tabId); }}
+                    className="ml-0.5 text-zinc-700 hover:text-zinc-400 transition-colors p-0.5 rounded leading-none cursor-pointer">
+                    <X size={9} />
+                  </span>
+                </button>
+              );
+            })}
+            <button onClick={handleNew} title="New note"
+              className="px-2.5 py-1.5 text-zinc-600 hover:text-zinc-300 hover:bg-zinc-800 transition-colors shrink-0">
+              <Plus size={11} />
+            </button>
+          </div>
+        )}
+
+        {/* Tag filter bar — visible in list view (no tabs, or home button active) */}
+        {!showSettings && !showHelp && (openTabs.length === 0 || activeTabId === null) && !zenMode && allTags.length > 0 && (
           <div className="flex items-center gap-1 px-3 py-1.5 border-b border-zinc-800 bg-zinc-950 overflow-x-auto shrink-0">
             <Hash size={9} className="text-zinc-600 shrink-0" />
             <button onClick={() => setActiveTag(null)}
-              className={`px-2 py-0.5 rounded-full text-[9px] font-bold tracking-wide transition-colors shrink-0 ${!activeTag ? "bg-cyan-500/20 text-cyan-400" : "text-zinc-600 hover:text-zinc-400"}`}>
+              className={`px-2 py-0.5 rounded-full text-[9px] font-bold tracking-wide transition-colors shrink-0 ${!activeTag ? "bg-zinc-500/20 text-zinc-100" : "text-zinc-600 hover:text-zinc-400"}`}>
               All
             </button>
             {allTags.map((tag) => (
               <button key={tag} onClick={() => setActiveTag(activeTag === tag ? null : tag)}
-                className={`px-2 py-0.5 rounded-full text-[9px] font-bold tracking-wide transition-colors shrink-0 ${activeTag === tag ? "bg-cyan-500/20 text-cyan-400" : "text-zinc-600 hover:text-zinc-400"}`}>
+                className={`px-2 py-0.5 rounded-full text-[12px] font-bold tracking-wide transition-colors shrink-0 ${activeTag === tag ? "bg-zinc-500/20 text-zinc-100" : "text-zinc-600 hover:text-zinc-400"}`}>
                 #{tag}
               </button>
             ))}
@@ -1968,36 +2552,51 @@ export default function SignalPad() {
           <SettingsView onClose={closePanel} />
         ) : showHelp ? (
           <HelpView onClose={closePanel} />
-        ) : activeNote ? (
-          <NoteEditor
-            key={activeNote.id}
-            note={activeNote}
-            onBack={() => setActiveId(null)}
-            onSave={(changes) => updateNote(activeNote.id, changes)}
-            onDelete={() => { deleteNote(activeNote.id); setActiveId(null); }}
-            onTogglePin={() => togglePin(activeNote.id)}
-            mdPreview={mdPreview}
-            onMdPreviewChange={setMdPreview}
-            zenMode={zenMode}
-            onZenChange={setZenMode}
-            onNavigate={handleWikiNavigate}
-            onShowContextMenu={setContextMenu}
-          />
+        ) : openTabs.length > 0 && activeTabId !== null ? (
+          /* All open tabs rendered simultaneously; only active tab is visible */
+          <>
+            {openTabs.map((tabId) => {
+              const tn = notes.find((n) => n.id === tabId);
+              if (!tn) return null;
+              const isActiveTab = tabId === activeTabId;
+              return (
+                <div key={tabId} style={{ display: isActiveTab ? "flex" : "none", flexDirection: "column", flex: 1, minHeight: 0 }}>
+                  <NoteEditor
+                    note={tn}
+                    isActive={isActiveTab}
+                    onBack={() => closeTab(tabId)}
+                    onSave={(changes) => updateNote(tabId, changes)}
+                    onDelete={() => { deleteNote(tabId); closeTab(tabId); }}
+                    onTogglePin={() => togglePin(tabId)}
+                    mdPreview={isActiveTab ? mdPreview : false}
+                    onMdPreviewChange={isActiveTab ? setMdPreview : () => { }}
+                    zenMode={isActiveTab ? zenMode : false}
+                    onZenChange={isActiveTab ? setZenMode : () => { }}
+                    onNavigate={handleWikiNavigate}
+                    onShowContextMenu={setContextMenu}
+                    onWordCountChange={isActiveTab ? setEditorWordCount : () => { }}
+                  />
+                </div>
+              );
+            })}
+          </>
         ) : (
           <div className="flex-1 overflow-y-auto px-3 py-3 space-y-4 bg-zinc-950" onContextMenu={buildListMenu}>
             {filteredPinned.length > 0 && (
               <section>
-                <div className="flex items-center gap-1.5 mb-2 px-0.5">
-                  <Pin size={9} className="text-amber-500/70" />
-                  <span className="text-[9px] font-bold uppercase tracking-[0.16em] text-amber-500/70">Pinned</span>
+                <div className="flex items-center gap-1.5 mb-2 px-0.5 text-zinc-600">
+                  <Pin size={9} className="pinned-section" />
+                  <span className="section-label">Pinned</span>
                 </div>
                 <div className="space-y-2">
                   {filteredPinned.map((n) => (
-                    <NoteCard key={n.id} note={n} onClick={() => setActiveId(n.id)}
+                    <NoteCard key={n.id} note={n} onClick={() => openTab(n.id)}
                       onReveal={() => invoke("reveal_note", { noteId: n.id, fileExt: n.fileExt || "md" })}
                       onContextMenu={(e) => buildCardMenu(e, n)}
                       sceneId={noteScenes[n.id] ?? null}
-                      onSetScene={setNoteScene} />
+                      onSetScene={setNoteScene}
+                      cardScenesEnabled={cardScenesEnabled}
+                      density={cardDensity} />
                   ))}
                 </div>
               </section>
@@ -2007,21 +2606,22 @@ export default function SignalPad() {
                 {filteredPinned.length > 0 && (
                   <div className="flex items-center gap-1.5 mb-2 px-0.5">
                     <BookOpen size={9} className="text-zinc-600" />
-                    <span className="text-[9px] font-bold uppercase tracking-[0.16em] text-zinc-600">Notes</span>
+                    <span className="section-label">Notes</span>
                   </div>
                 )}
                 <div className="space-y-2">
                   {filteredUnpinned.map((n) => (
-                    <NoteCard key={n.id} note={n} onClick={() => setActiveId(n.id)}
+                    <NoteCard key={n.id} note={n} onClick={() => openTab(n.id)}
                       onReveal={() => invoke("reveal_note", { noteId: n.id, fileExt: n.fileExt || "md" })}
                       onContextMenu={(e) => buildCardMenu(e, n)}
                       draggable={!activeTag}
-                      onDragStart={(e) => handleDragStart(e, n.id)}
-                      onDragOver={(e) => handleDragOver(e, n.id)}
-                      onDrop={() => handleDrop(n.id)}
+                      onGripPointerDown={handleGripPointerDown}
                       dragOver={dragOverId === n.id}
+                      isDragging={dragId === n.id}
                       sceneId={noteScenes[n.id] ?? null}
                       onSetScene={setNoteScene}
+                      cardScenesEnabled={cardScenesEnabled}
+                      density={cardDensity}
                     />
                   ))}
                 </div>
@@ -2042,32 +2642,44 @@ export default function SignalPad() {
       </div>{/* end inner padded column */}
 
       {/* Editor footer */}
-      {!showSettings && !showHelp && activeNote && !zenMode && (
-        <div className="px-3 py-1.5 border-t border-zinc-800 flex items-center justify-between shrink-0">
-          <span className="text-[9px] glass-text">
+      {!showSettings && !showHelp && activeTabId !== null && activeNote && !zenMode && (
+        <div className="px-3 py-1.5 border-t border-zinc-800 flex items-center justify-between shrink-0 surface-800">
+          <span className="text-[12px] glass-text">
             {mdPreview ? "Markdown preview"
               : activeNote.burn ? "🔥 Burns when closed"
-              : activeNote.pinned ? "Pinned — read-only by default"
-              : "Ctrl+S to save · Ctrl+K palette"}
+                : activeNote.pinned ? "Pinned — read-only by default"
+                  : "Ctrl+S to save · Ctrl+K palette"}
           </span>
-          <span className="text-[9px] glass-text">{fmtDate(activeNote.updatedAt)}</span>
+          <div className="flex items-center gap-3">
+            {editorWordCount > 0 && (
+              <span className="text-[9px] text-zinc-600 tabular-nums">
+                {editorWordCount}w · {Math.max(1, Math.ceil(editorWordCount / 200))}min
+              </span>
+            )}
+            <span className="text-[12px] glass-text">{fmtDate(activeNote.updatedAt)}</span>
+          </div>
         </div>
       )}
 
       {/* Note list footer */}
-      {!showSettings && !showHelp && !activeNote && (
-        <div className="px-3 py-2.5 border-t border-zinc-800 flex items-center justify-between shrink-0">
-          <span className="text-[9px] glass-text">
+      {!showSettings && !showHelp && (openTabs.length === 0 || activeTabId === null) && (
+        <div className="px-3 py-2.5 border-t border-zinc-800 flex items-center justify-between shrink-0 surface-800">
+          <span className="text-[12px] glass-text">
             {activeTag ? `#${activeTag} · ` : ""}{notes.length} note{notes.length !== 1 ? "s" : ""}
           </span>
           <div className="flex items-center gap-1.5">
-            <button onClick={handleImport} title="Import a file"
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-bold tracking-wide transition-all duration-150 bg-zinc-800 border border-zinc-700 text-zinc-400 hover:bg-zinc-700 hover:border-zinc-600 hover:text-zinc-200">
+            {capWarning && (
+              <span className="text-[10px] text-orange-400 animate-pulse">Cap of {noteCap} reached</span>
+            )}
+            <button onClick={handleImport} title="Import a file" className="btn btn-secondary">
               <Upload size={11} /> Import
             </button>
-            <button onClick={handleNew}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-bold tracking-wide transition-all duration-150 bg-cyan-950 border border-cyan-800 text-cyan-300 hover:bg-cyan-900 hover:border-cyan-700 hover:text-cyan-200">
+            <button onClick={handleNew} className="btn btn-primary">
               <Plus size={11} /> New Note
+            </button>
+            <button onClick={() => (showHelp ? closePanel() : openHelp())} title="Help"
+              className={`w-7 h-7 flex items-center justify-center rounded transition-colors ${showHelp ? "text-zinc-100 bg-zinc-950" : "text-zinc-600 hover:text-zinc-300 hover:bg-zinc-700"}`}>
+              <HelpCircle size={14} />
             </button>
           </div>
         </div>

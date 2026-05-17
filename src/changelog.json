@@ -1,9 +1,29 @@
 {
   "history": [
     {
+      "version": "0.1.4",
+      "date": "2026-05-17",
+      "changes": []
+    },
+    {
+      "version": "0.1.3",
+      "date": "2026-05-17",
+      "changes": [
+        "Tab support — open multiple notes simultaneously with a tab bar; close tabs to return to list",
+        "Table insertion — toolbar button inserts a styled 3-column table",
+        "Paragraph focus mode — dims all blocks except the one the cursor is in",
+        "Research notes panel — collapsible scratch pad per note, persisted separately from content",
+        "Version timeline — snapshot panel now has a Timeline tab showing all snapshots as a scrubbable dot rail",
+        "Word export — Save To… dialog now includes .docx option (headings, bold/italic/lists/tables preserved)",
+        "Word import — Import dialog now accepts .docx files, converted to HTML via mammoth"
+      ]
+    },
+    {
       "version": "0.1.2",
       "date": "2026-05-13",
-      "changes": []
+      "changes": [
+        "Update changelog.json to include changes for version 0.1.1"
+      ]
     },
     {
       "version": "0.1.1",

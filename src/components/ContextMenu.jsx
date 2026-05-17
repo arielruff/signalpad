@@ -45,9 +45,14 @@ export default function ContextMenu({ x, y, items, onClose }) {
               disabled:opacity-30 disabled:cursor-not-allowed
               ${item.danger
                 ? "text-red-400 hover:bg-red-950 hover:text-red-300"
+                : item.suggestion
+                ? "ctx-suggestion"
                 : "text-zinc-300 hover:bg-zinc-700 hover:text-white"}`}
           >
-            {item.icon && (
+            {item.suggestion && (
+              <span className="ctx-suggestion-arrow">→</span>
+            )}
+            {item.icon && !item.suggestion && (
               <span className={`shrink-0 ${item.danger ? "text-red-400" : "text-zinc-500"}`}>
                 {item.icon}
               </span>

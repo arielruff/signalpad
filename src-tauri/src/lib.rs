@@ -95,6 +95,19 @@ fn reveal_note(app: tauri::AppHandle, note_id: String, file_ext: String) -> Resu
 }
 
 #[tauri::command]
+fn read_file_bytes(path: String) -> Result<Vec<u8>, String> {
+    fs::read(&path).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn write_file_bytes(path: String, data: Vec<u8>) -> Result<(), String> {
+    if let Some(parent) = std::path::Path::new(&path).parent() {
+        fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    }
+    fs::write(&path, &data).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 fn open_folder(path: String) -> Result<(), String> {
     #[cfg(target_os = "windows")]
     std::process::Command::new("explorer")
@@ -132,12 +145,20 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
+        .setup(|app| {
+            if let Some(win) = app.get_webview_window("main") {
+                let _ = win.set_icon(tauri::include_image!("icons/128x128.png"));
+            }
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             get_notes_dir,
             list_note_files,
             list_snapshot_files,
             read_file,
             write_file,
+            read_file_bytes,
+            write_file_bytes,
             delete_file,
             open_folder,
             reveal_note,

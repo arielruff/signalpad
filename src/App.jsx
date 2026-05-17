@@ -1,5 +1,14 @@
+import React, { useState } from "react";
 import SignalPad from "./components/SignalPad";
+import SplashScreen from "./components/SplashScreen";
 
 export default function App() {
-  return <SignalPad />;
+  const [splashDone, setSplashDone] = useState(false);
+
+  return (
+    <>
+      {!splashDone && <SplashScreen onDone={() => setSplashDone(true)} />}
+      <SignalPad />
+    </>
+  );
 }

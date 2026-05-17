@@ -20,8 +20,8 @@ export default function ChangelogModal({ onClose }) {
       >
         <div className="flex items-center justify-between px-4 py-3 border-b border-zinc-800 shrink-0">
           <div className="flex items-center gap-2">
-            <NotebookPen size={12} className="text-cyan-400" />
-            <span className="text-[11px] font-bold tracking-[0.16em] uppercase text-cyan-400">Patch Notes</span>
+            <NotebookPen size={12} className="text-zinc-100" />
+            <span className="text-[11px] font-bold tracking-[0.16em] uppercase text-zinc-100">Patch Notes</span>
           </div>
           <button
             onClick={onClose}
@@ -35,10 +35,10 @@ export default function ChangelogModal({ onClose }) {
           {changelog.history.map((entry, i) => (
             <div key={entry.version}>
               <div className="flex items-baseline gap-2 mb-2">
-                <span className="text-[13px] font-bold text-cyan-400 font-mono">v{entry.version}</span>
+                <span className="text-[13px] font-bold text-zinc-100 font-mono">v{entry.version}</span>
                 <span className="text-[10px] text-zinc-600">{entry.date}</span>
                 {i === 0 && (
-                  <span className="ml-auto text-[8px] font-bold uppercase tracking-wider text-cyan-600 bg-cyan-500/10 border border-cyan-500/20 px-1.5 py-0.5 rounded">
+                  <span className="ml-auto text-[8px] font-bold uppercase tracking-wider text-zinc-600 bg-zinc-500/10 border border-zinc-500/20 px-1.5 py-0.5 rounded">
                     Latest
                   </span>
                 )}
@@ -46,7 +46,7 @@ export default function ChangelogModal({ onClose }) {
               <ul className="space-y-1.5">
                 {entry.changes.length > 0 ? entry.changes.map((change, j) => (
                   <li key={j} className="flex items-start gap-2 text-[11px] text-zinc-400">
-                    <span className="text-cyan-700 mt-px shrink-0">—</span>
+                    <span className="text-zinc-700 mt-px shrink-0">—</span>
                     <span>{change}</span>
                   </li>
                 )) : (

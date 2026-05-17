@@ -16,72 +16,551 @@ body,
   overflow: hidden;
 }
 
+/* ═══════════════════════════════════════════════════════════════════════════
+   TWO PARALLEL COLOR SYSTEMS — do not merge without care
+   ─────────────────────────────────────────────────────────────────────────────
+   1. CSS custom properties  (--bg-*, --text-*, --border-*, etc.)
+      → Semantic-role tokens. May be semi-transparent in light/red themes
+        (intentional: used for glass surfaces, overlays, gradients).
+      → Consumed by: CSS utility classes (.app-glass, .surface-900,
+        .glass-text, .btn-*, .smooth-caret, .signalpad-content, …)
+      → To restyle a semantic surface, edit the variable here.
+
+   2. Per-theme Tailwind zinc overrides  ([data-theme="…"] .bg-zinc-*)
+      → Opaque solid-UI remapping of Tailwind's zinc scale.
+        bg-zinc-700, text-zinc-700, and border-zinc-700 all need different
+        colors in light/red themes, so they cannot share one variable.
+      → Consumed by: Tailwind utility classes used directly in JSX.
+      → To restyle a structural element, edit the class override below.
+
+   Rule of thumb:
+   • Glass / overlay / gradients           → use CSS variables
+   • Solid backgrounds / text / borders    → use Tailwind zinc classes
+   ═══════════════════════════════════════════════════════════════════════════ */
+
 /* ── Theme variables ── */
 :root {
-  --bg-base:        #090b11;
-  --bg-glass:       rgba(9, 11, 17, 0.65);
-  --bg-950:         #09090b;
-  --bg-900:         #18181b;
-  --bg-800:         #27272a;
-  --bg-700:         #3f3f46;
-  --bg-strip:       rgb(9, 11, 17);
-  --text-primary:   #d4d4d8;
+  --bg-base: #090b11;
+  --bg-glass: rgba(9, 11, 17, 0.65);
+  --bg-950: #09090b;
+  --bg-900: #18181b;
+  --bg-800: #27272a;
+  --bg-700: #3f3f46;
+  --bg-strip: rgb(9, 11, 17);
+  --text-primary: #d4d4d8;
   --text-secondary: #a1a1aa;
-  --text-muted:     #71717a;
-  --text-faint:     #52525b;
-  --border-base:    #3f3f46;
-  --border-subtle:  #27272a;
-  --accent:         #22d3ee;
-  --accent-bg:      rgba(34, 211, 238, 0.1);
-  --scrollbar:      #3f3f46;
-  --card-bg:        rgba(24, 24, 27, 0.4);
+  --text-muted: #71717a;
+  --text-faint: #52525b;
+  --border-base: #3f3f46;
+  --border-subtle: #27272a;
+  --accent: #f75454;
+  --accent-bg: rgba(34, 211, 238, 0.1);
+  --scrollbar: #3f3f46;
+  --card-bg: rgba(24, 24, 27, 0.4);
+  /* Pinned note accent — change these four to retheme pinned cards */
+  --pinned-accent: #ffffff;
+  --pinned-border: #da2d2d;
+  --pinned-text: #fef3c7;
+  --pinned-fg: #da2d2d;
 }
 
 [data-theme="light"] {
-  --bg-base:        #f7f3ee;
-  --bg-glass:       rgba(247, 243, 238, 0.92);
-  --bg-950:         #f5f1ec;
-  --bg-900:         #ede8e1;
-  --bg-800:         #e2ddd6;
-  --bg-700:         #ccc7be;
-  --bg-strip:       #f5f1ec;
-  --text-primary:   #1c1917;
+  --bg-base: #e9ceaa;
+  --bg-glass: rgba(247, 243, 238, 0.575);
+  --bg-950: #e2be94;
+  --bg-900: #ede8e1b0;
+  --bg-800: #e2ddd636;
+  --bg-700: #ccc7be4d;
+  --bg-strip: #f5f1ec;
+  --text-primary: #222222;
   --text-secondary: #44403c;
-  --text-muted:     #78716c;
-  --text-faint:     #a8a29e;
-  --border-base:    #d6d0c8;
-  --border-subtle:  #e2ddd6;
-  --accent:         #0891b2;
-  --accent-bg:      rgba(8, 145, 178, 0.08);
-  --scrollbar:      #ccc7be;
-  --card-bg:        rgba(237, 232, 225, 0.6);
+  --text-muted: #78716c;
+  --text-faint: #a8a29e;
+  --border-base: #d6d0c8;
+  --border-subtle: #e2ddd6;
+  --accent: #eb4c4c;
+  --accent-bg: #962f2f;
+  --scrollbar: #ccc7be;
+  --card-bg: rgba(185, 185, 185, 0.856);
+  /* Pinned accent overrides for Light theme */
+  --pinned-accent: #f3c28970;
+  --pinned-border: #b6b6b6;
+  --pinned-text: #292929;
+  --pinned-fg: #333333;
 }
 
 [data-theme="red"] {
-  --bg-base:        #0e0508;
-  --bg-glass:       rgba(14, 5, 8, 0.72);
-  --bg-950:         #0e0508;
-  --bg-900:         #180810;
-  --bg-800:         #2a0e18;
-  --bg-700:         #3d1422;
-  --bg-strip:       rgb(14, 5, 8);
-  --text-primary:   #f5cdd4;
-  --text-secondary: #e8a0ad;
-  --text-muted:     #c0607a;
-  --text-faint:     #8a3549;
-  --border-base:    #4a1a28;
-  --border-subtle:  #2a0e18;
-  --accent:         #ff1a3a;
-  --accent-bg:      rgba(255, 26, 58, 0.12);
-  --scrollbar:      #4a1a28;
-  --card-bg:        rgba(42, 14, 24, 0.5);
+  --bg-base: #962f2f;
+  --bg-glass: rgba(110, 30, 30, 0.836);
+  --bg-950: #962f2f;
+  --bg-900: #5219192c;
+  --bg-800: #5219192c;
+  --bg-700: #bb4848;
+  --bg-strip: rgb(150, 47, 47);
+  --text-primary: #ffffff;
+  --text-secondary: #fde8e8;
+  --text-muted: #f9c0c0;
+  --text-faint: #f09898;
+  --border-base: #c86060;
+  --border-subtle: #ad3d3d;
+  --accent: #ffffff;
+  --accent-bg: rgba(255, 255, 255, 0.15);
+  --scrollbar: #c86060;
+  --card-bg: rgba(160, 53, 53, 0.7);
+  /* Pinned accent overrides for Signal (red) theme */
+  --pinned-accent: #d44141;
+  --pinned-border: rgba(255, 255, 255, 0.418);
+  --pinned-text: #ffffff;
+  --pinned-fg: #ffffff;
 }
+
+/* ── Per-theme Tailwind zinc overrides (system 2 — see note at top) ─────── */
+/* These remap Tailwind's zinc scale to theme-appropriate opaque colours.   */
+/* bg/text/border at the same zinc level intentionally use different values; */
+/* that's why these live here instead of in the CSS variable block above.   */
+
+/* ── Per-theme button overrides ─────────────────────────────────────────── */
+
+/* Dark (default — matches :root vars, listed here for reference/editing)   */
+/* .btn-primary  → cyan tinted   .btn-secondary → zinc-800                 */
+
+/* Light — solid filled buttons, warm border secondary */
+[data-theme="light"] .btn-primary {
+  background: #e73443;
+  border-color: #c4c4c467;
+  color: #ffffff;
+}
+
+[data-theme="light"] .btn-primary:hover {
+  background: #fd5b5b;
+  border-color: #f1f1f18c;
+  color: #ffffff;
+}
+
+[data-theme="light"] .btn-secondary {
+  background: #ede8e1;
+  border-color: #c8c2b8;
+  color: #44403c;
+}
+
+[data-theme="light"] .btn-secondary:hover {
+  background: #e2ddd6;
+  border-color: #b5afa8;
+  color: #1c1917;
+}
+
+[data-theme="light"] .btn-ghost {
+  color: #78716c;
+}
+
+[data-theme="light"] .btn-ghost:hover {
+  background: #e2ddd6;
+  color: #1c1917;
+}
+
+[data-theme="light"] .btn-danger:hover {
+  color: #dc2626;
+  background: rgba(220, 38, 38, 0.08);
+  border-color: rgba(220, 38, 38, 0.25);
+}
+
+[data-theme="light"] .btn-icon {
+  color: #78716c;
+}
+
+[data-theme="light"] .btn-icon:hover {
+  background: #e2ddd6;
+  color: #1c1917;
+}
+
+[data-theme="light"] .btn-icon.active {
+  background: rgba(8, 145, 178, 0.12);
+  color: #0891b2;
+}
+
+/* Signal — white/glass buttons on red background */
+[data-theme="red"] .btn-primary {
+  background: rgb(221, 66, 66);
+  border-color: #ffffff2a;
+  color: #f8d5d5;
+}
+
+[data-theme="red"] .btn-primary:hover {
+  background: rgb(194, 68, 68);
+  border-color: #ffffff2a;
+  color: #fff0f0;
+}
+
+[data-theme="red"] .btn-secondary {
+  background: rgb(107, 32, 32);
+  border-color: rgb(161, 47, 47);
+  color: rgba(255, 255, 255, 0.75);
+}
+
+[data-theme="red"] .btn-secondary:hover {
+  background: rgb(184, 88, 88);
+  border-color: rgba(255, 255, 255, 0.40);
+  color: #ffffff;
+}
+
+[data-theme="red"] .btn-ghost {
+  color: rgba(255, 255, 255, 0.55);
+}
+
+[data-theme="red"] .btn-ghost:hover {
+  background: rgba(255, 231, 231, 0);
+  color: #ffffff;
+}
+
+[data-theme="red"] .btn-danger:hover {
+  color: #ffffff;
+  background: rgba(0, 0, 0, 0.25);
+  border-color: rgba(255, 255, 255, 0.3);
+}
+
+[data-theme="red"] .btn-icon {
+  color: rgba(255, 255, 255, 0.5);
+}
+
+[data-theme="red"] .btn-icon:hover {
+  background: rgba(156, 146, 146, 0.856);
+  color: #ffffff;
+}
+
+[data-theme="red"] .btn-icon.active {
+  background: rgba(255, 255, 255, 0.18);
+  color: #ffffff;
+}
+
+/* ── Light theme: zinc → warm parchment ─────────────────────────────────── */
+[data-theme="light"] .bg-zinc-950 {
+  background-color: #f5f1ec;
+}
+
+[data-theme="light"] .bg-zinc-900 {
+  background-color: #ede8e1;
+}
+
+[data-theme="light"] .bg-zinc-800 {
+  background-color: #e2ddd6;
+}
+
+[data-theme="light"] .bg-zinc-700 {
+  background-color: #ccc7be;
+}
+
+[data-theme="light"] .bg-zinc-900\/40 {
+  background-color: color-mix(in srgb, #ede8e1 40%, transparent);
+}
+
+[data-theme="light"] .bg-zinc-900\/60 {
+  background-color: color-mix(in srgb, #ede8e1 60%, transparent);
+}
+
+[data-theme="light"] .bg-zinc-800\/60 {
+  background-color: color-mix(in srgb, #e2ddd6 60%, transparent);
+}
+
+[data-theme="light"] .hover\:bg-zinc-800:hover {
+  background-color: #e2ddd6;
+}
+
+[data-theme="light"] .hover\:bg-zinc-700:hover {
+  background-color: #ccc7be;
+}
+
+[data-theme="light"] .text-zinc-100 {
+  color: #1c1917;
+}
+
+[data-theme="light"] .text-zinc-200 {
+  color: #1c1917;
+}
+
+[data-theme="light"] .text-zinc-300 {
+  color: #292524;
+}
+
+[data-theme="light"] .text-zinc-400 {
+  color: #3c3836;
+}
+
+[data-theme="light"] .text-zinc-500 {
+  color: #504945;
+}
+
+[data-theme="light"] .text-zinc-600 {
+  color: #6b6560;
+}
+
+[data-theme="light"] .text-zinc-700 {
+  color: #9c958e;
+}
+
+[data-theme="light"] .hover\:text-zinc-300:hover {
+  color: #1c1917;
+}
+
+[data-theme="light"] .hover\:text-zinc-200:hover {
+  color: #1c1917;
+}
+
+[data-theme="light"] .hover\:text-white:hover {
+  color: #1c1917;
+}
+
+[data-theme="light"] .border-zinc-800 {
+  border-color: #e2ddd6;
+}
+
+[data-theme="light"] .border-zinc-700 {
+  border-color: #d6d0c8;
+}
+
+[data-theme="light"] .border-zinc-600 {
+  border-color: #c8c2b8;
+}
+
+[data-theme="light"] .hover\:border-zinc-600:hover {
+  border-color: #b5afa8;
+}
+
+[data-theme="light"] .hover\:border-zinc-700:hover {
+  border-color: #c8c2b8;
+}
+
+/* ── Signal (red) theme: zinc → flat crimson ────────────────────────────── */
+[data-theme="red"] .bg-zinc-950 {
+  background-color: #962f2f;
+}
+
+[data-theme="red"] .bg-zinc-900 {
+  background-color: #a03535;
+}
+
+[data-theme="red"] .bg-zinc-800 {
+  background-color: #ad3d3d;
+}
+
+[data-theme="red"] .bg-zinc-700 {
+  background-color: #bb4848;
+}
+
+[data-theme="red"] .bg-zinc-900\/40 {
+  background-color: rgba(160, 53, 53, 0.4);
+}
+
+[data-theme="red"] .bg-zinc-900\/60 {
+  background-color: rgba(160, 53, 53, 0.6);
+}
+
+[data-theme="red"] .bg-zinc-800\/60 {
+  background-color: rgba(173, 61, 61, 0.6);
+}
+
+[data-theme="red"] .hover\:bg-zinc-800:hover {
+  background-color: #ad3d3d;
+}
+
+[data-theme="red"] .hover\:bg-zinc-700:hover {
+  background-color: #bb4848;
+}
+
+[data-theme="red"] .text-zinc-100 {
+  color: #ffffff;
+}
+
+[data-theme="red"] .text-zinc-200 {
+  color: #ffffff;
+}
+
+[data-theme="red"] .text-zinc-300 {
+  color: #fde8e8;
+}
+
+[data-theme="red"] .text-zinc-400 {
+  color: #fad0d0;
+}
+
+[data-theme="red"] .text-zinc-500 {
+  color: #f9c0c0;
+}
+
+[data-theme="red"] .text-zinc-600 {
+  color: #f0a0a0;
+}
+
+[data-theme="red"] .text-zinc-700 {
+  color: #e48080;
+}
+
+[data-theme="red"] .hover\:text-zinc-300:hover {
+  color: #ffffff;
+}
+
+[data-theme="red"] .hover\:text-zinc-200:hover {
+  color: #ffffff;
+}
+
+[data-theme="red"] .hover\:text-white:hover {
+  color: #ffffff;
+}
+
+[data-theme="red"] .border-zinc-800 {
+  border-color: rgba(255, 255, 255, 0.14);
+}
+
+[data-theme="red"] .border-zinc-700 {
+  border-color: rgba(255, 255, 255, 0.28);
+}
+
+[data-theme="red"] .border-zinc-600 {
+  border-color: rgba(255, 255, 255, 0.40);
+}
+
+[data-theme="red"] .hover\:border-zinc-600:hover {
+  border-color: rgba(255, 255, 255, 0.50);
+}
+
+[data-theme="red"] .hover\:border-zinc-700:hover {
+  border-color: rgba(255, 255, 255, 0.36);
+}
+
 
 body {
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   background: transparent;
   color: var(--text-primary);
   -webkit-font-smoothing: antialiased;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   DESIGN TOKENS  — edit here to restyle the whole UI from one place
+   ═══════════════════════════════════════════════════════════════════════════ */
+:root {
+  /* Radius scale */
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+
+  /* Font-size scale */
+  --text-xs: 9px;
+  --text-sm: 10px;
+  --text-md: 11px;
+  --text-lg: 13px;
+
+  /* Button geometry — change once to resize all buttons */
+  --btn-px: 12px;
+  --btn-py: 6px;
+  --btn-gap: 6px;
+  --btn-font-size: var(--text-md);
+  --btn-font-weight: 700;
+  --btn-radius: var(--radius-lg);
+  --btn-tracking: 0.04em;
+
+  /* Icon button */
+  --icon-btn-size: 28px;
+
+  /* App brand color */
+  --brand-fg: var(--accent);
+
+  /* Context menu spell suggestions */
+  --suggestion-fg: #e63939;
+  --suggestion-fg-hover: #a5f3fc;
+  --suggestion-arrow: #22d3ee;
+  --suggestion-hover-bg: rgba(8, 145, 178, 0.10);
+}
+
+/* ── Button base ─────────────────────────────────────────────────────────── */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--btn-gap);
+  padding: var(--btn-py) var(--btn-px);
+  border-radius: var(--btn-radius);
+  font-size: var(--btn-font-size);
+  font-weight: var(--btn-font-weight);
+  letter-spacing: var(--btn-tracking);
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+  white-space: nowrap;
+  user-select: none;
+}
+
+/* Primary — accent-coloured CTA (New Note, Save…) */
+.btn-primary {
+  background: var(--accent-bg);
+  border-color: color-mix(in srgb, var(--accent) 55%, transparent);
+  color: var(--accent);
+}
+
+.btn-primary:hover {
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
+  border-color: var(--accent);
+}
+
+/* Secondary — quiet action (Import, Export…) */
+.btn-secondary {
+  background: var(--bg-800);
+  border-color: var(--border-base);
+  color: var(--text-secondary);
+}
+
+.btn-secondary:hover {
+  background: var(--bg-700);
+  border-color: color-mix(in srgb, var(--border-base) 60%, white);
+  color: var(--text-primary);
+}
+
+/* Ghost — borderless subtle action */
+.btn-ghost {
+  background: transparent;
+  border-color: transparent;
+  color: var(--text-muted);
+}
+
+.btn-ghost:hover {
+  background: var(--bg-800);
+  color: var(--text-primary);
+}
+
+/* Danger — destructive */
+.btn-danger {
+  background: transparent;
+  border-color: transparent;
+  color: var(--text-muted);
+}
+
+.btn-danger:hover {
+  background: rgba(239, 68, 68, 0.1);
+  border-color: rgba(239, 68, 68, 0.35);
+  color: #f87171;
+}
+
+/* Icon button — square, no label */
+.btn-icon {
+  width: var(--icon-btn-size);
+  height: var(--icon-btn-size);
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-md);
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+  color: var(--text-faint);
+}
+
+.btn-icon:hover {
+  background: var(--bg-800);
+  color: var(--text-primary);
+}
+
+.btn-icon.active {
+  background: var(--accent-bg);
+  color: var(--accent);
 }
 
 /* ── App shell ── */
@@ -97,17 +576,34 @@ body {
 }
 
 /* ── Scrollbar ── */
-* { scrollbar-width: thin; scrollbar-color: var(--scrollbar) transparent; }
-::-webkit-scrollbar { width: 4px; height: 4px; }
-::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: var(--scrollbar); border-radius: 999px; }
-::-webkit-scrollbar-thumb:hover { background: var(--text-faint); }
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--scrollbar) transparent;
+}
+
+::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--scrollbar);
+  border-radius: 999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--text-faint);
+}
 
 /* ── Glass text ── */
 .glass-text {
   color: var(--text-primary);
   font-weight: 700;
-  text-shadow: 0 0 8px rgba(255,255,255,0.25), 0 0 20px rgba(255,255,255,0.08);
+  text-shadow: 0 0 8px rgba(255, 255, 255, 0.25), 0 0 20px rgba(255, 255, 255, 0.08);
 }
 
 [data-theme="light"] .glass-text {
@@ -117,7 +613,7 @@ body {
 
 .glass-input {
   color: var(--text-primary) !important;
-  text-shadow: 0 0 8px rgba(255,255,255,0.25), 0 0 20px rgba(255,255,255,0.08);
+  text-shadow: 0 0 8px rgba(255, 255, 255, 0.25), 0 0 20px rgba(255, 255, 255, 0.08);
 }
 
 [data-theme="light"] .glass-input {
@@ -140,8 +636,78 @@ body {
   pointer-events: none;
   will-change: top, left, height;
 }
-@keyframes caret-blink { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
-.smooth-caret--blinking { animation: caret-blink 1s ease-in-out infinite; }
+
+@keyframes caret-blink {
+
+  0%,
+  100% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0;
+  }
+}
+
+.smooth-caret--blinking {
+  animation: caret-blink 1.5s ease-in-out infinite;
+}
+
+/* ── Paragraph focus mode ── */
+.paragraph-focus-mode>* {
+  opacity: 0.15;
+  transition: opacity 0.18s ease;
+}
+
+.paragraph-focus-mode>.sp-focused-block {
+  opacity: 1 !important;
+}
+
+/* ── Tables ── */
+.sp-table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 6px 0;
+  font-size: 12px;
+}
+
+.sp-table th,
+.sp-table td {
+  border: 1px solid var(--border-base);
+  padding: 4px 8px;
+  text-align: left;
+  min-width: 56px;
+}
+
+.sp-table th {
+  background: var(--bg-800);
+  font-weight: 600;
+  color: var(--text-secondary);
+  font-size: 11px;
+}
+
+.sp-table tr:nth-child(even) td {
+  background: var(--bg-800);
+}
+
+.sp-table td:focus {
+  outline: 1px solid var(--accent);
+}
+
+/* ── Tab bar ── */
+.sp-tab-bar {
+  display: flex;
+  align-items: stretch;
+  border-bottom: 1px solid var(--border-subtle);
+  background: var(--bg-950);
+  overflow-x: auto;
+  scrollbar-width: none;
+  flex-shrink: 0;
+}
+
+.sp-tab-bar::-webkit-scrollbar {
+  display: none;
+}
 
 /* ── Wiki links ── */
 .wiki-link {
@@ -150,9 +716,19 @@ body {
   border-bottom: 1px dashed color-mix(in srgb, var(--accent) 50%, transparent);
   transition: color 0.15s, border-color 0.15s;
 }
-.wiki-link:hover { opacity: 0.8; }
-.wiki-link--broken { color: #f87171; border-color: #f8717180; }
-.wiki-link--broken:hover { color: #fca5a5; }
+
+.wiki-link:hover {
+  opacity: 0.8;
+}
+
+.wiki-link--broken {
+  color: #f87171;
+  border-color: #f8717180;
+}
+
+.wiki-link--broken:hover {
+  color: #fca5a5;
+}
 
 /* ── Typewriter focus dim — overlay approach (mask-image can't transition) ── */
 .typewriter-overlay {
@@ -160,23 +736,36 @@ body {
   inset: 0;
   pointer-events: none;
   z-index: 3;
-  background: linear-gradient(
-    to bottom,
-    var(--bg-950) 0%,
-    transparent 28%,
-    transparent 72%,
-    var(--bg-950) 100%
-  );
+  background: linear-gradient(to bottom,
+      var(--bg-950) 0%,
+      transparent 28%,
+      transparent 72%,
+      var(--bg-950) 100%);
   opacity: 0;
   transition: opacity 0.35s ease;
 }
+
 .typewriter-overlay.active {
   opacity: 1;
 }
 
 /* ── Note content (editor + read views) ── */
-.signalpad-content { font-size: 14px; color: var(--text-primary); line-height: 1.75; }
-.signalpad-content:empty::before { content: attr(data-placeholder); color: var(--text-faint); pointer-events: none; }
+.signalpad-content {
+  font-size: 14px;
+  color: var(--text-primary);
+  line-height: 1.75;
+}
+
+/* Force native caret invisible so only the custom smooth-caret shows */
+.signalpad-content[contenteditable] {
+  caret-color: transparent;
+}
+
+.signalpad-content:empty::before {
+  content: attr(data-placeholder);
+  color: var(--text-faint);
+  pointer-events: none;
+}
 
 .signalpad-content h1,
 .signalpad-content h2,
@@ -206,16 +795,45 @@ body {
   opacity: 0.6;
 }
 
-.signalpad-content .collapsed-section { display: none; }
+.signalpad-content .collapsed-section {
+  display: none;
+}
 
-.signalpad-content ul { list-style: disc; padding-left: 1.4em; margin: 0.4em 0; }
-.signalpad-content ol { list-style: decimal; padding-left: 1.4em; margin: 0.4em 0; }
-.signalpad-content li { margin: 0.15em 0; }
-.signalpad-content hr { border: none; border-top: 1px solid var(--border-base); margin: 0.8em 0; }
+.signalpad-content ul {
+  list-style: disc;
+  padding-left: 1.4em;
+  margin: 0.4em 0;
+}
+
+.signalpad-content ol {
+  list-style: decimal;
+  padding-left: 1.4em;
+  margin: 0.4em 0;
+}
+
+.signalpad-content li {
+  margin: 0.15em 0;
+}
+
+.signalpad-content hr {
+  border: none;
+  border-top: 1px solid var(--border-base);
+  margin: 0.8em 0;
+}
+
 .signalpad-content b,
-.signalpad-content strong { color: var(--text-primary); }
-.signalpad-content p { margin: 0.25em 0; }
-.signalpad-content .empty { color: var(--text-faint); font-style: italic; }
+.signalpad-content strong {
+  color: var(--text-primary);
+}
+
+.signalpad-content p {
+  margin: 0.25em 0;
+}
+
+.signalpad-content .empty {
+  color: var(--text-faint);
+  font-style: italic;
+}
 
 /* ── Checklist ── */
 .signalpad-content input[type="checkbox"] {
@@ -235,7 +853,7 @@ body {
   margin: 0.2em 0;
 }
 
-.signalpad-content .checklist-item.checked > span {
+.signalpad-content .checklist-item.checked>span {
   text-decoration: line-through;
   opacity: 0.5;
 }
@@ -246,13 +864,18 @@ body {
   display: block;
   border-radius: 6px;
   border: 1px solid color-mix(in srgb, var(--accent) 18%, transparent);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 4%, transparent), 0 3px 14px rgba(0,0,0,0.55);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 4%, transparent), 0 3px 14px rgba(0, 0, 0, 0.55);
   margin: 0.6em 0;
 }
 
 /* ── Markdown preview ── */
-.md-preview h1 { font-size: 17px; }
-.md-preview h2 { font-size: 16px; }
+.md-preview h1 {
+  font-size: 17px;
+}
+
+.md-preview h2 {
+  font-size: 16px;
+}
 
 .md-preview code {
   font-family: 'JetBrains Mono', 'Fira Code', monospace;
@@ -272,7 +895,11 @@ body {
   margin: 0.6em 0;
 }
 
-.md-preview pre code { background: none; padding: 0; color: var(--text-primary); }
+.md-preview pre code {
+  background: none;
+  padding: 0;
+  color: var(--text-primary);
+}
 
 .md-preview blockquote {
   border-left: 2px solid var(--border-base);
@@ -281,12 +908,28 @@ body {
   color: var(--text-muted);
 }
 
-.md-preview a { color: var(--accent); text-decoration: underline; }
+.md-preview a {
+  color: var(--accent);
+  text-decoration: underline;
+}
 
-.md-preview table { border-collapse: collapse; width: 100%; margin: 0.5em 0; }
+.md-preview table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 0.5em 0;
+}
+
 .md-preview th,
-.md-preview td { border: 1px solid var(--border-base); padding: 4px 8px; text-align: left; }
-.md-preview th { background: var(--bg-800); color: var(--text-primary); }
+.md-preview td {
+  border: 1px solid var(--border-base);
+  padding: 4px 8px;
+  text-align: left;
+}
+
+.md-preview th {
+  background: var(--bg-800);
+  color: var(--text-primary);
+}
 
 /* ── Passcode overlay ── */
 .passcode-overlay {
@@ -301,6 +944,17 @@ body {
   -webkit-backdrop-filter: blur(24px);
 }
 
+/* ── Glowing close button ── */
+.close-btn {
+  color: #f70f0f;
+  transition: color 0.15s, filter 0.2s;
+}
+
+.close-btn:hover {
+  color: #ffffff;
+  filter: drop-shadow(0 0 5px rgba(253, 18, 18, 0.301)) drop-shadow(0 0 14px rgba(241, 10, 10, 0.349));
+}
+
 /* ── Pixel art panel ── */
 .pixel-art-panel {
   image-rendering: pixelated;
@@ -311,4 +965,110 @@ body {
 .scene-selector {
   background: var(--bg-900);
   border: 1px solid var(--border-base);
+}
+
+/* ── App brand ── */
+.app-name {
+  color: var(--brand-fg);
+}
+
+/* ── Surface backgrounds (use CSS vars so themes work correctly) ── */
+.surface-900 {
+  background: var(--bg-900);
+}
+
+.surface-800 {
+  background: var(--bg-800);
+}
+
+/* ── Section / group label ── */
+.section-label {
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.16em;
+  color: var(--text-faint);
+}
+
+/* ── Pinned note card ── */
+.pinned-card {
+  border-color: var(--pinned-border);
+  background-color: color-mix(in srgb, var(--pinned-accent) 100%, transparent);
+}
+
+.pinned-card:hover {
+  background-color: color-mix(in srgb, var(--pinned-accent) 8%, transparent);
+}
+
+.pinned-header {
+  border-color: color-mix(in srgb, var(--pinned-border) 60%, transparent);
+  background-color: color-mix(in srgb, var(--pinned-accent) 6%, transparent);
+}
+
+/* "PINNED" chip badge */
+.pinned-badge {
+  background-color: color-mix(in srgb, var(--pinned-accent) 15%, transparent);
+  color: var(--pinned-fg);
+  border-color: var(--pinned-border);
+}
+
+/* Title text inside a pinned card */
+.pinned-title {
+  color: var(--pinned-text);
+}
+
+/* File-extension suffix (dimmed) */
+.pinned-title-dim {
+  color: color-mix(in srgb, var(--pinned-text) 60%, transparent);
+}
+
+/* "Pinned" section label and icon in the note list */
+.pinned-section {
+  color: color-mix(in srgb, var(--pinned-accent) 70%, transparent);
+}
+
+/* Pin button in editor header — active (note is pinned) state */
+.pinned-btn {
+  color: var(--pinned-fg);
+}
+
+.pinned-btn:hover {
+  color: var(--pinned-fg);
+  background-color: color-mix(in srgb, var(--pinned-accent) 15%, transparent);
+}
+
+/* Generic pinned-fg text (overflow menu icon, etc.) */
+.text-pinned {
+  color: var(--pinned-fg);
+}
+
+/* Snapshot star button */
+.star-btn {
+  color: var(--text-faint);
+}
+
+.star-btn:hover {
+  color: var(--pinned-fg);
+}
+
+.star-btn.starred {
+  color: var(--pinned-fg);
+}
+
+/* ── Context menu spell suggestion rows ── */
+.ctx-suggestion {
+  color: var(--suggestion-fg);
+  font-weight: 500;
+}
+
+.ctx-suggestion:hover {
+  background: var(--suggestion-hover-bg);
+  color: var(--suggestion-fg-hover);
+}
+
+.ctx-suggestion-arrow {
+  color: var(--suggestion-arrow);
+  font-size: 9px;
+  font-weight: 700;
+  flex-shrink: 0;
 }
