@@ -1,9 +1,51 @@
 {
   "history": [
     {
+      "version": "1.0.1",
+      "date": "2026-07-20",
+      "changes": []
+    },
+    {
+      "version": "1.0.0",
+      "date": "2026-07-20",
+      "changes": [
+        "First stable release 🎉",
+        "SignalPad now ships as a proper Windows app with a setup installer",
+        "Desktop (Big View) mode — a large, resizable word-processor layout with a notes sidebar",
+        "Four page styles for Big View (Floating Sheet, Carved Well, Paper Stack, Drafting Frame) with configurable page color and width",
+        "Full stability pass — passcode locks, tab auto-save, checklists, deletes, paste, and window sizing all hardened in the 0.1.5 cycle"
+      ]
+    },
+    {
+      "version": "0.1.5",
+      "date": "2026-07-19",
+      "changes": [
+        "Fixed: password-type locks could never be unlocked — app and per-note locks now remember their type, and the unlock screen has a PIN/password switch",
+        "Fixed: unsaved changes were lost when closing a tab with the ✕ button",
+        "Fixed: checklist checkbox states are now saved with the note",
+        "Fixed: pressing Enter in a checklist reliably continues it; Enter on an empty item exits the list",
+        "Fixed: deleting notes from the list and editor did nothing",
+        "Fixed: the font size picker deselected your highlighted text",
+        "Fixed: Ctrl+Shift+N created two notes per press",
+        "Fixed: the window now actually resizes between list and editor views",
+        "Fixed: right-click Paste now works, including images",
+        "Fixed: burn-after-reading now triggers when a note's tab is closed, not just the back button",
+        "Fixed: the Patch Notes button in Help crashed the app",
+        "New: Desktop (Big View) mode — monitor button in the title bar opens a large, resizable layout with a notes sidebar and page-style editor",
+        "New: Big View page styles — Floating Sheet, Carved Well, Paper Stack, or Drafting Frame, with light / dark / match-theme page color (Settings → Appearance)",
+        "New: Copy Image in the editor right-click menu",
+        "PINs can now be 4–6 digits (new OK button on the pad)",
+        "Broken [[wiki links]] are now shown in red",
+        "Hardened file access and added a content security policy"
+      ]
+    },
+    {
       "version": "0.1.4",
       "date": "2026-05-17",
-      "changes": []
+      "changes": [
+        "App icon and logo added",
+        "Spellcheck suggestions in the right-click menu, with common-typo corrections"
+      ]
     },
     {
       "version": "0.1.3",

@@ -91,6 +91,7 @@ export default function AmbientSound() {
   const stop = () => {
     nodesRef.current.forEach((n) => { try { n.stop?.(); n.disconnect?.(); } catch {} });
     nodesRef.current = [];
+    if (gainRef.current) { try { gainRef.current.disconnect(); } catch {} gainRef.current = null; }
     setActive(null);
   };
 

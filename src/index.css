@@ -749,6 +749,14 @@ body {
   opacity: 1;
 }
 
+/* When typewriter mode is on, pad the editor so the active line can scroll to vertical center
+   even at the very top or bottom of the document. */
+.signalpad-content.typewriter-active {
+  padding-top: 42% !important;
+  padding-bottom: 42% !important;
+  scroll-behavior: smooth;
+}
+
 /* ── Note content (editor + read views) ── */
 .signalpad-content {
   font-size: 14px;
@@ -866,6 +874,188 @@ body {
   border: 1px solid color-mix(in srgb, var(--accent) 18%, transparent);
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 4%, transparent), 0 3px 14px rgba(0, 0, 0, 0.55);
   margin: 0.6em 0;
+}
+
+/* ── Desktop (Big View) mode — word-processor page: centered measure, roomier type ── */
+.signalpad-content.sp-page {
+  --measure: 820px; /* standard document width */
+  padding-left: max(32px, calc((100% - var(--measure)) / 2)) !important;
+  padding-right: max(32px, calc((100% - var(--measure)) / 2)) !important;
+  padding-top: 24px;
+  font-size: 15px;
+}
+
+.sp-page.sp-width-narrow { --measure: 620px; }
+.sp-page.sp-width-wide { --measure: 1080px; }
+
+/* ═══ Big View page styles ═══════════════════════════════════════════════════
+   .sp-well wraps the writing area; .sp-style-* picks the treatment and
+   .sp-scheme-* picks the page colors (light / dark / match app theme).
+   The well tone always derives from the app theme so the chrome stays coherent.
+   The editable page is absolute (inset overrides); read views use margins.  */
+.sp-well {
+  position: relative;
+  background: color-mix(in srgb, var(--bg-950) 85%, black);
+}
+
+.sp-scheme-light {
+  --page-bg: #fffdf8;
+  --page-fg: #2c2823;
+  --page-strong: #1d1a16;
+  --sheet-1: #f0e8d8;
+  --sheet-2: #e2d8c2;
+}
+
+.sp-scheme-dark {
+  --page-bg: #121217;
+  --page-fg: #d4d4d8;
+  --page-strong: #e8e8ec;
+  --sheet-1: #20202a;
+  --sheet-2: #2a2a36;
+}
+
+.sp-scheme-theme {
+  --page-bg: var(--bg-950);
+  --page-fg: var(--text-primary);
+  --page-strong: var(--text-primary);
+  --sheet-1: color-mix(in srgb, var(--bg-950) 74%, #808080);
+  --sheet-2: color-mix(in srgb, var(--bg-950) 55%, #808080);
+}
+
+.sp-well .signalpad-content.sp-page {
+  background: var(--page-bg);
+  color: var(--page-fg);
+}
+
+.sp-well .signalpad-content.sp-page :is(h1, h2, h3, b, strong) {
+  color: var(--page-strong);
+}
+
+.sp-well>.signalpad-content.sp-page:not([contenteditable]) {
+  position: relative;
+  z-index: 1;
+}
+
+.sp-well>[contenteditable].sp-page {
+  z-index: 1;
+}
+
+/* 1 · Floating Sheet — elevated on layered shadows, slim reveal */
+.sp-style-sheet>.signalpad-content.sp-page:not([contenteditable]) {
+  margin: 14px;
+}
+
+.sp-style-sheet>[contenteditable].sp-page {
+  inset: 14px;
+}
+
+.sp-style-sheet .signalpad-content.sp-page {
+  border-radius: 8px;
+  box-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.4),
+    0 10px 26px rgba(0, 0, 0, 0.32),
+    0 30px 70px rgba(0, 0, 0, 0.22);
+}
+
+/* 2 · Carved Well — true edge-to-edge, recessed with inner shadows */
+.sp-style-carved .signalpad-content.sp-page {
+  box-shadow:
+    inset 0 5px 14px rgba(0, 0, 0, 0.32),
+    inset 0 -4px 10px rgba(0, 0, 0, 0.18),
+    inset 6px 0 12px rgba(0, 0, 0, 0.14),
+    inset -6px 0 12px rgba(0, 0, 0, 0.14),
+    inset 0 0 0 1px rgba(0, 0, 0, 0.3);
+}
+
+/* 3 · Paper Stack — skewed sheets peek out behind the page */
+.sp-style-stack>.signalpad-content.sp-page:not([contenteditable]) {
+  margin: 18px;
+}
+
+.sp-style-stack>[contenteditable].sp-page {
+  inset: 18px;
+}
+
+.sp-style-stack .signalpad-content.sp-page {
+  border-radius: 5px;
+  box-shadow: 0 7px 20px rgba(0, 0, 0, 0.35);
+}
+
+.sp-style-stack::before,
+.sp-style-stack::after {
+  content: "";
+  position: absolute;
+  inset: 18px;
+  border-radius: 5px;
+  z-index: 0;
+}
+
+/* ::before paints first, so it is the deeper sheet */
+.sp-style-stack::before {
+  background: var(--sheet-2, #dbd1bb);
+  transform: rotate(0.4deg) translateY(8px);
+}
+
+.sp-style-stack::after {
+  background: var(--sheet-1, #e9e1d1);
+  transform: rotate(-0.5deg) translateY(4px);
+  box-shadow: 0 5px 14px rgba(0, 0, 0, 0.25);
+}
+
+/* 4 · Drafting Frame — flat sheet over a blueprint grid, red corners */
+.sp-style-frame {
+  background-image:
+    linear-gradient(var(--sp-grid, rgba(255, 255, 255, 0.035)) 1px, transparent 1px),
+    linear-gradient(90deg, var(--sp-grid, rgba(255, 255, 255, 0.035)) 1px, transparent 1px);
+  background-size: 17px 17px;
+}
+
+[data-theme="light"] .sp-style-frame {
+  --sp-grid: rgba(90, 68, 44, 0.1);
+}
+
+.sp-style-frame>.signalpad-content.sp-page:not([contenteditable]) {
+  margin: 20px 16px 16px;
+}
+
+.sp-style-frame>[contenteditable].sp-page {
+  inset: 20px 16px 16px;
+}
+
+.sp-style-frame .signalpad-content.sp-page {
+  border-radius: 2px;
+  box-shadow:
+    0 5px 18px rgba(0, 0, 0, 0.3),
+    0 0 0 1px color-mix(in srgb, var(--page-fg) 22%, transparent);
+}
+
+/* Registration corners + doc label (rendered only for the frame style) */
+.sp-ck {
+  position: absolute;
+  width: 12px;
+  height: 12px;
+  border: 1.5px solid var(--accent);
+  z-index: 2;
+  pointer-events: none;
+}
+
+.sp-ck.tl { top: 15px; left: 11px; border-right: none; border-bottom: none; }
+.sp-ck.tr { top: 15px; right: 11px; border-left: none; border-bottom: none; }
+.sp-ck.bl { bottom: 11px; left: 11px; border-right: none; border-top: none; }
+.sp-ck.br { bottom: 11px; right: 11px; border-left: none; border-top: none; }
+
+.sp-doclabel {
+  position: absolute;
+  top: 4px;
+  right: 16px;
+  font-family: ui-monospace, Consolas, monospace;
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--accent);
+  z-index: 2;
+  pointer-events: none;
 }
 
 /* ── Markdown preview ── */

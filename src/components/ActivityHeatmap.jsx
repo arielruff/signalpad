@@ -63,7 +63,7 @@ export default function ActivityHeatmap({ notes }) {
             {week.map((count, di) => (
               <div
                 key={di}
-                title={count === 0 ? "No activity" : `${count} edit${count !== 1 ? "s" : ""}`}
+                title={count === 0 ? "No activity" : `${count} note update${count !== 1 ? "s" : ""}`}
                 className={`w-[8px] h-[8px] rounded-[2px] transition-colors ${getColor(count)}`}
               />
             ))}
@@ -71,7 +71,7 @@ export default function ActivityHeatmap({ notes }) {
         ))}
       </div>
       <p className="text-[9px] text-zinc-600 mt-2">
-        {totalActivity} edit{totalActivity !== 1 ? "s" : ""} in the last {WEEKS} weeks
+        {totalActivity} note update{totalActivity !== 1 ? "s" : ""} in the last {WEEKS} weeks
       </p>
     </div>
   );

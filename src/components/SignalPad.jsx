@@ -6,14 +6,14 @@ import {
   Heading2, BookOpen, NotebookPen, Type, ChevronDown, Settings, Download, FolderOpen,
   FileText, Upload, Camera, Flame, Maximize2, Minimize2, Copy, GripVertical,
   Hash, AlignCenter, History, Smile, HelpCircle, Star, MoreHorizontal, Scissors,
-  CheckSquare, Lock, Palette, Table2, BookMarked, Crosshair,
+  CheckSquare, Lock, Palette, Table2, BookMarked, Crosshair, Monitor, Square,
 } from "lucide-react";
 import { SceneCanvas, SCENES } from "./PixelArtScene";
 import PasscodeModal from "./PasscodeModal";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { LogicalSize } from "@tauri-apps/api/dpi";
 import { invoke } from "@tauri-apps/api/core";
-import { save as saveDialog, open as openDialog } from "@tauri-apps/plugin-dialog";
+import { save as saveDialog, open as openDialog, confirm as tauriConfirm } from "@tauri-apps/plugin-dialog";
 import { marked } from "marked";
 import TurndownService from "turndown";
 import { register as registerShortcut } from "@tauri-apps/plugin-global-shortcut";
@@ -118,10 +118,13 @@ function extractTags(html) {
   return [...new Set([...text.matchAll(/#(\w+)/g)].map((m) => m[1]))];
 }
 
-function processWikiLinks(html) {
+function processWikiLinks(html, existingTitles) {
   return html.replace(/\[\[([^\]]+)\]\]/g, (_, title) => {
     const safe = title.replace(/"/g, "&quot;");
-    return `<span class="wiki-link" data-wikilink="${encodeURIComponent(title)}">«${safe}»</span>`;
+    const broken = existingTitles ? !existingTitles.has(title.toLowerCase()) : false;
+    const cls = broken ? "wiki-link wiki-link--broken" : "wiki-link";
+    const tip = broken ? "No note with this title" : "Open note";
+    return `<span class="${cls}" data-wikilink="${encodeURIComponent(title)}" title="${tip}">«${safe}»</span>`;
   });
 }
 
@@ -188,7 +191,7 @@ function FontDropdown({ onSelect, onBrowse }) {
   const filteredAdded = (addedFonts ?? []).filter((f) => !q || f.toLowerCase().includes(q));
 
   return (
-    <div className="absolute top-full left-0 right-0 z-50 bg-zinc-950 border-x border-b border-zinc-700 shadow-2xl">
+    <div className="bg-zinc-950 border border-zinc-700 rounded shadow-2xl">
       <div className="px-2 py-1.5 border-b border-zinc-800">
         <input autoFocus value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search fonts…"
           className="w-full bg-zinc-800 text-[11px] text-zinc-200 px-2.5 py-1.5 rounded border border-zinc-700 focus:outline-none focus:border-zinc-500/80 placeholder:text-zinc-600" />
@@ -232,7 +235,7 @@ function GoogleFontBrowser({ onSelect, onBack }) {
   const [search, setSearch] = useState("");
   const filtered = search ? GOOGLE_FONTS.filter((f) => f.toLowerCase().includes(search.toLowerCase())) : GOOGLE_FONTS;
   return (
-    <div className="absolute top-full left-0 right-0 z-50 bg-zinc-950 border-x border-b border-zinc-700 shadow-2xl">
+    <div className="bg-zinc-950 border border-zinc-700 rounded shadow-2xl">
       <div className="px-2 py-1.5 border-b border-zinc-800 flex items-center gap-1.5">
         <button onMouseDown={(e) => { e.preventDefault(); onBack(); }} className="text-zinc-600 hover:text-zinc-300 transition-colors shrink-0"><ChevronLeft size={13} /></button>
         <input autoFocus value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search Google Fonts…"
@@ -262,7 +265,7 @@ function ToolbarBtn({ title, onClick, children }) {
   );
 }
 
-const FONT_SIZES = [9, 10, 11, 12, 13, 14, 16, 18, 20, 24];
+const FONT_SIZES = [9, 10, 11, 12, 13, 14, 16, 18, 20, 24, 32, 48, 72, 100];
 
 function FormatToolbar({ editorRef }) {
   const { addFont } = useSignalPadStore();
@@ -270,8 +273,11 @@ function FormatToolbar({ editorRef }) {
   const [showFontBrowser, setShowFontBrowser] = useState(false);
   const [showSizePicker, setShowSizePicker] = useState(false);
   const [currentSize, setCurrentSize] = useState(12);
+  const [customSizeInput, setCustomSizeInput] = useState("");
   const savedRangeRef = useRef(null);
   const containerRef = useRef(null);
+  const fontWrapRef = useRef(null);
+  const sizeWrapRef = useRef(null);
 
   useEffect(() => {
     if (!showFontDropdown && !showFontBrowser && !showSizePicker) return;
@@ -287,6 +293,21 @@ function FormatToolbar({ editorRef }) {
     return () => { clearTimeout(id); if (handler) document.removeEventListener("mousedown", handler); };
   }, [showFontDropdown, showFontBrowser, showSizePicker]);
 
+  // Keep the size indicator in sync with the actual font size at the caret
+  useEffect(() => {
+    const handler = () => {
+      const sel = window.getSelection();
+      let node = sel?.anchorNode;
+      if (!node || !editorRef.current?.contains(node)) return;
+      if (node.nodeType === Node.TEXT_NODE) node = node.parentElement;
+      if (!(node instanceof HTMLElement)) return;
+      const size = Math.round(parseFloat(getComputedStyle(node).fontSize));
+      if (Number.isFinite(size) && size > 0) setCurrentSize(size);
+    };
+    document.addEventListener("selectionchange", handler);
+    return () => document.removeEventListener("selectionchange", handler);
+  }, [editorRef]);
+
   const cmd = (command, value = null) => { editorRef.current?.focus(); document.execCommand(command, false, value); };
   const saveSelection = () => {
     const sel = window.getSelection();
@@ -300,11 +321,13 @@ function FormatToolbar({ editorRef }) {
   };
   const applyFontFamily = (family) => {
     restoreSelection();
-    if (!family) { document.execCommand("removeFormat"); }
-    else { document.execCommand("styleWithCSS", false, true); document.execCommand("fontName", false, family); }
+    document.execCommand("styleWithCSS", false, true);
+    // "inherit" resolves to the editor's base font — clears the family without
+    // stripping bold/italic the way removeFormat would.
+    document.execCommand("fontName", false, family || "inherit");
   };
   const applyFontSize = (sizePx) => {
-    editorRef.current?.focus();
+    restoreSelection();
     document.execCommand("styleWithCSS", false, false);
     document.execCommand("fontSize", false, "7");
     const fontEls = editorRef.current?.querySelectorAll('font[size="7"]') ?? [];
@@ -330,18 +353,67 @@ function FormatToolbar({ editorRef }) {
     document.execCommand("insertHTML", false, html);
   };
 
+  const commitCustomSize = () => {
+    const n = parseInt(customSizeInput, 10);
+    if (!Number.isFinite(n) || n < 1) return;
+    const clamped = Math.min(100, Math.max(1, n));
+    setCurrentSize(clamped);
+    applyFontSize(`${clamped}px`);
+    setCustomSizeInput("");
+    setShowSizePicker(false);
+  };
+
   return (
     <div ref={containerRef} className="relative shrink-0">
-      <div className="flex items-center gap-0.5 px-2 py-1 border-b border-zinc-700 bg-zinc-950 overflow-x-auto">
-        {/* Font controls FIRST */}
-        <button title="Font" onMouseDown={(e) => { e.preventDefault(); if (fontActive) { closeAll(); return; } saveSelection(); setShowFontDropdown(true); setShowSizePicker(false); }}
-          className={`px-1.5 py-1 rounded text-[10px] transition-colors flex items-center gap-0.5 ${fontActive ? "text-zinc-100 bg-zinc-700" : "text-zinc-400 hover:text-white hover:bg-zinc-700"}`}>
-          <Type size={11} /><ChevronDown size={8} />
-        </button>
-        <button title="Font size" onMouseDown={(e) => { e.preventDefault(); setShowFontDropdown(false); setShowFontBrowser(false); setShowSizePicker((p) => !p); }}
-          className={`px-1.5 py-1 rounded text-[10px] font-mono transition-colors min-w-[26px] text-center ${showSizePicker ? "text-zinc-100 bg-zinc-700" : "text-zinc-400 hover:text-white hover:bg-zinc-700"}`}>
-          {currentSize}
-        </button>
+      <div className="flex flex-wrap items-center gap-0.5 px-2 py-1 border-b border-zinc-700 bg-zinc-950">
+        {/* Font family — dropdown anchored under this specific button */}
+        <div ref={fontWrapRef} className="relative">
+          <button title="Font" onMouseDown={(e) => { e.preventDefault(); if (fontActive) { closeAll(); return; } saveSelection(); setShowFontDropdown(true); setShowSizePicker(false); }}
+            className={`px-1.5 py-1 rounded text-[10px] transition-colors flex items-center gap-0.5 ${fontActive ? "text-zinc-100 bg-zinc-700" : "text-zinc-400 hover:text-white hover:bg-zinc-700"}`}>
+            <Type size={11} /><ChevronDown size={8} />
+          </button>
+          {showFontDropdown && (
+            <div className="absolute top-full left-0 z-50 mt-0.5 w-[220px]">
+              <FontDropdown onSelect={(family) => { applyFontFamily(family); closeAll(); }} onBrowse={() => { setShowFontDropdown(false); setShowFontBrowser(true); }} />
+            </div>
+          )}
+          {showFontBrowser && (
+            <div className="absolute top-full left-0 z-50 mt-0.5 w-[300px]">
+              <GoogleFontBrowser onSelect={(font) => { addFont(font); applyFontFamily(font); closeAll(); }} onBack={() => { setShowFontBrowser(false); setShowFontDropdown(true); }} />
+            </div>
+          )}
+        </div>
+
+        {/* Font size — dropdown anchored under this specific button (not the entire toolbar) */}
+        <div ref={sizeWrapRef} className="relative">
+          <button title="Font size" onMouseDown={(e) => { e.preventDefault(); saveSelection(); setShowFontDropdown(false); setShowFontBrowser(false); setShowSizePicker((p) => !p); }}
+            className={`px-1.5 py-1 rounded text-[10px] font-mono transition-colors min-w-[26px] text-center ${showSizePicker ? "text-zinc-100 bg-zinc-700" : "text-zinc-400 hover:text-white hover:bg-zinc-700"}`}>
+            {currentSize}
+          </button>
+          {showSizePicker && (
+            <div className="absolute top-full left-0 z-50 mt-0.5 bg-zinc-950 border border-zinc-700 rounded shadow-xl overflow-hidden min-w-[80px]">
+              <div className="px-1.5 py-1 border-b border-zinc-800">
+                <input
+                  type="number"
+                  min={1}
+                  max={100}
+                  value={customSizeInput}
+                  onChange={(e) => setCustomSizeInput(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); commitCustomSize(); } }}
+                  placeholder="1–100"
+                  className="w-full bg-zinc-800 text-[11px] font-mono text-zinc-200 px-2 py-1 rounded border border-zinc-700 focus:outline-none focus:border-zinc-500/80 placeholder:text-zinc-600 text-center"
+                />
+              </div>
+              <div className="max-h-[200px] overflow-y-auto">
+                {FONT_SIZES.map((s) => (
+                  <button key={s} onMouseDown={(e) => { e.preventDefault(); setCurrentSize(s); applyFontSize(`${s}px`); setShowSizePicker(false); }}
+                    className={`block w-full text-right px-3 py-1 text-[11px] font-mono transition-colors ${currentSize === s ? "text-zinc-100 bg-zinc-900" : "text-zinc-300 hover:bg-zinc-700 hover:text-white"}`}>{s}</button>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+
         <div className="w-px h-4 bg-zinc-700 mx-1" />
         <ToolbarBtn title="Bold (Ctrl+B)" onClick={() => cmd("bold")}><Bold size={13} /></ToolbarBtn>
         <ToolbarBtn title="Italic (Ctrl+I)" onClick={() => cmd("italic")}><Italic size={13} /></ToolbarBtn>
@@ -357,16 +429,6 @@ function FormatToolbar({ editorRef }) {
         <ToolbarBtn title="Divider" onClick={() => cmd("insertHorizontalRule")}><Minus size={11} /></ToolbarBtn>
         <ToolbarBtn title="Clear formatting" onClick={() => cmd("removeFormat")}><span className="text-[9px]">Tx</span></ToolbarBtn>
       </div>
-      {showFontDropdown && <FontDropdown onSelect={(family) => { applyFontFamily(family); closeAll(); }} onBrowse={() => { setShowFontDropdown(false); setShowFontBrowser(true); }} />}
-      {showFontBrowser && <GoogleFontBrowser onSelect={(font) => { addFont(font); applyFontFamily(font); closeAll(); }} onBack={() => { setShowFontBrowser(false); setShowFontDropdown(true); }} />}
-      {showSizePicker && (
-        <div className="absolute top-full right-0 z-50 mt-0.5 bg-zinc-950 border border-zinc-700 rounded shadow-xl overflow-hidden min-w-[44px]">
-          {FONT_SIZES.map((s) => (
-            <button key={s} onMouseDown={(e) => { e.preventDefault(); setCurrentSize(s); applyFontSize(`${s}px`); setShowSizePicker(false); }}
-              className={`block w-full text-right px-3 py-1 text-[11px] font-mono transition-colors ${currentSize === s ? "text-zinc-100 bg-zinc-950" : "text-zinc-300 hover:bg-zinc-700 hover:text-white"}`}>{s}</button>
-          ))}
-        </div>
-      )}
     </div>
   );
 }
@@ -429,7 +491,14 @@ function CardScenePicker({ sceneId, onSelect, onClose, anchorRef }) {
   useEffect(() => {
     if (anchorRef?.current) {
       const r = anchorRef.current.getBoundingClientRect();
-      setPos({ top: r.bottom + 4, right: window.innerWidth - r.right });
+      const pickerHeight = 280; // max-h-[240px] + header ~40px
+      const spaceBelow = window.innerHeight - r.bottom;
+      const rightEdge = window.innerWidth - r.right;
+      if (spaceBelow >= pickerHeight) {
+        setPos({ top: r.bottom + 4, right: rightEdge });
+      } else {
+        setPos({ bottom: window.innerHeight - r.top + 4, right: rightEdge });
+      }
     }
   }, [anchorRef]);
 
@@ -447,7 +516,7 @@ function CardScenePicker({ sceneId, onSelect, onClose, anchorRef }) {
     <div
       ref={pickerRef}
       onClick={(e) => e.stopPropagation()}
-      style={{ position: "fixed", top: pos.top, right: pos.right, zIndex: 9990, width: 180 }}
+      style={{ position: "fixed", top: pos.top, bottom: pos.bottom, right: pos.right, zIndex: 9990, width: 180 }}
       className="flex flex-col bg-zinc-900 border border-zinc-700 rounded-lg shadow-2xl overflow-hidden"
     >
       <div className="flex items-center justify-between px-2.5 py-1.5 border-b border-zinc-800 shrink-0">
@@ -476,7 +545,7 @@ function CardScenePicker({ sceneId, onSelect, onClose, anchorRef }) {
   );
 }
 
-function NoteCard({ note, onClick, onReveal, onContextMenu, draggable, onGripPointerDown, dragOver, isDragging, sceneId, onSetScene, cardScenesEnabled, density }) {
+function NoteCard({ note, onClick, onReveal, onDelete, onContextMenu, draggable, onGripPointerDown, dragOver, isDragging, sceneId, onSetScene, cardScenesEnabled, density }) {
   const [showPicker, setShowPicker] = useState(false);
   const pickerBtnRef = useRef(null);
 
@@ -526,6 +595,13 @@ function NoteCard({ note, onClick, onReveal, onContextMenu, draggable, onGripPoi
           <button onClick={(e) => { e.stopPropagation(); onReveal(); }} title="Show in folder"
             className="opacity-0 group-hover:opacity-100 transition-opacity p-0.5 rounded text-zinc-600 hover:text-zinc-300 hover:bg-zinc-700">
             <FolderOpen size={13} />
+          </button>
+          <button
+            onClick={async (e) => { e.stopPropagation(); if (await tauriConfirm(`Delete "${note.title || "Untitled"}"?`, { title: "Delete note", kind: "warning" })) onDelete(); }}
+            title="Delete note"
+            className="opacity-0 group-hover:opacity-100 transition-opacity p-0.5 rounded text-zinc-600 hover:text-red-400 hover:bg-red-950"
+          >
+            <Trash2 size={13} />
           </button>
         </div>
       </div>
@@ -582,13 +658,13 @@ const COMMON_CORRECTIONS = {
   "fourty": "forty", "freind": "friend", "futher": "further", "gaurd": "guard",
   "glamourous": "glamorous", "goverment": "government", "grammer": "grammar",
   "harrass": "harass", "hieght": "height", "humerous": "humorous",
-  "ignorance": "ignorance", "imediately": "immediately", "independant": "independent",
+  "imediately": "immediately", "independant": "independent",
   "inteligent": "intelligent", "intresting": "interesting", "irresistable": "irresistible",
-  "its": "its", "knowlege": "knowledge", "labratory": "laboratory",
+  "knowlege": "knowledge", "labratory": "laboratory",
   "languege": "language", "lenth": "length", "liason": "liaison", "libary": "library",
   "lisence": "license", "maintainance": "maintenance", "medeval": "medieval",
   "memmorable": "memorable", "millenium": "millennium", "miniscule": "minuscule",
-  "mischevious": "mischievous", "misspell": "misspell", "neccessary": "necessary",
+  "mischevious": "mischievous", "neccessary": "necessary",
   "negotate": "negotiate", "nieghbor": "neighbor", "noticable": "noticeable",
   "occassion": "occasion", "occured": "occurred", "occuring": "occurring",
   "occurance": "occurrence", "ommit": "omit", "oppertunity": "opportunity",
@@ -599,8 +675,8 @@ const COMMON_CORRECTIONS = {
   "probaly": "probably", "pronounciation": "pronunciation", "publically": "publicly",
   "questionaire": "questionnaire", "recieve": "receive", "recomend": "recommend",
   "refered": "referred", "restaraunt": "restaurant", "rythm": "rhythm",
-  "sacrilegious": "sacrilegious", "seige": "siege", "seperate": "separate",
-  "sherif": "sheriff", "sieze": "seize", "similer": "similar", "sincerely": "sincerely",
+  "seige": "siege", "seperate": "separate",
+  "sherif": "sheriff", "sieze": "seize", "similer": "similar",
   "socialy": "socially", "speach": "speech", "succesful": "successful",
   "supercede": "supersede", "supress": "suppress", "suprise": "surprise",
   "tatoo": "tattoo", "tendancy": "tendency", "threshhold": "threshold",
@@ -741,8 +817,19 @@ function TimelineView({ items, onRestore, starredAutoSnaps, onStar, onUnstar }) 
 
 // ─── Note editor ──────────────────────────────────────────────────────────────
 
-function NoteEditor({ note, onBack, onSave, onDelete, onTogglePin, mdPreview, onMdPreviewChange, zenMode, onZenChange, onNavigate, onShowContextMenu, onWordCountChange, isActive = true }) {
-  const { saveFormat, saveNoteTo, setNoteEmoji, setNoteColor, toggleBurn, saveSnapshot, listSnapshots, readSnapshot, deleteSnapshot, saveAutoSnapshot, listAutoSnapshots, starAutoSnapshot, unstarAutoSnapshot, deleteUnstarredAutoSnapshots, starredAutoSnaps, toolbarVisible, notePasscodes, setNotePasscode, spellcheck, setSpellcheck, spellcheckLang, autoSaveDelay } = useSignalPadStore();
+function NoteEditor({ note, onBack, onSave, onDelete, onTogglePin, mdPreview, onMdPreviewChange, zenMode, onZenChange, onNavigate, onShowContextMenu, onWordCountChange, isActive = true, desktopMode = false }) {
+  const { pageStyle, pageScheme, pageWidth } = useSignalPadStore();
+  const pageCls = desktopMode ? ` sp-page sp-width-${pageWidth}` : "";
+  // Zen strips all chrome, so the well treatment turns off with it
+  const wellActive = desktopMode && !zenMode;
+  const wellCls = wellActive ? ` sp-well sp-style-${pageStyle} sp-scheme-${pageScheme}` : "";
+  const frameDecor = wellActive && pageStyle === "frame" ? (
+    <>
+      <span className="sp-ck tl" /><span className="sp-ck tr" /><span className="sp-ck bl" /><span className="sp-ck br" />
+      <span className="sp-doclabel">DOC · {note.fileExt || "md"}</span>
+    </>
+  ) : null;
+  const { notes, saveFormat, saveNoteTo, setNoteEmoji, setNoteColor, toggleBurn, saveSnapshot, listSnapshots, readSnapshot, deleteSnapshot, saveAutoSnapshot, listAutoSnapshots, starAutoSnapshot, unstarAutoSnapshot, deleteUnstarredAutoSnapshots, starredAutoSnaps, toolbarVisible, notePasscodes, setNotePasscode, spellcheck, setSpellcheck, spellcheckLang, autoSaveDelay } = useSignalPadStore();
   const autoSaveTimer = useRef(null);
   const vis = (id) => toolbarVisible.has(id);
 
@@ -766,6 +853,14 @@ function NoteEditor({ note, onBack, onSave, onDelete, onTogglePin, mdPreview, on
   const [scratchOpen, setScratchOpen] = useState(false);
   const [scratchContent, setScratchContent] = useState(note.scratch || "");
   const scratchSaveTimer = useRef(null);
+  const [toast, setToast] = useState(null); // { msg, kind }
+  const toastTimer = useRef(null);
+  const showToast = useCallback((msg, kind = "info") => {
+    clearTimeout(toastTimer.current);
+    setToast({ msg, kind });
+    toastTimer.current = setTimeout(() => setToast(null), 1800);
+  }, []);
+  useEffect(() => () => clearTimeout(toastTimer.current), []);
 
   const editorRef = useRef(null);
   const editorWrapperRef = useRef(null);
@@ -918,7 +1013,9 @@ function NoteEditor({ note, onBack, onSave, onDelete, onTogglePin, mdPreview, on
     if (!rect || rect.height === 0) { caret.style.opacity = "0"; return; }
 
     const wrapperRect = editorWrapperRef.current.getBoundingClientRect();
-    const newTop = rect.top - wrapperRect.top + (editorRef.current?.scrollTop || 0);
+    // Caret is absolute-positioned inside the wrapper, which does not scroll.
+    // rect.top is viewport-relative and already accounts for editor scroll, so no scrollTop add.
+    const newTop = rect.top - wrapperRect.top;
     const newLeft = rect.left - wrapperRect.left;
     const lineChanged = caretLastTop.current !== null && Math.abs(newTop - caretLastTop.current) > rect.height * 0.5;
     caretLastTop.current = newTop;
@@ -949,13 +1046,33 @@ function NoteEditor({ note, onBack, onSave, onDelete, onTogglePin, mdPreview, on
   const enforceTypewriter = useCallback(() => {
     if (!typewriterMode || !editorRef.current) return;
     const sel = window.getSelection();
-    if (!sel?.rangeCount) return;
-    const range = sel.getRangeAt(0);
-    const rect = range.getBoundingClientRect();
+    if (!sel?.rangeCount || !editorRef.current.contains(sel.anchorNode)) return;
+    const range = sel.getRangeAt(0).cloneRange();
+    range.collapse(true);
+    let rect = range.getBoundingClientRect();
+    // Empty line — fall back to nearest block element rect
+    if (rect.height === 0) {
+      let node = sel.anchorNode;
+      if (node?.nodeType === Node.TEXT_NODE) node = node.parentElement;
+      while (node && node !== editorRef.current) {
+        const pr = node.getBoundingClientRect();
+        if (pr.height > 0) { rect = pr; break; }
+        node = node.parentElement;
+      }
+    }
+    if (!rect || rect.height === 0) return;
     const editorRect = editorRef.current.getBoundingClientRect();
     const target = editorRect.top + editorRect.height / 2;
-    editorRef.current.scrollTop += rect.top - target;
+    const delta = rect.top - target;
+    if (Math.abs(delta) > 0.5) editorRef.current.scrollTop += delta;
   }, [typewriterMode]);
+
+  // Re-center caret when typewriter mode is toggled on so the cursor jumps to vertical centre.
+  useEffect(() => {
+    if (!typewriterMode) return;
+    const id = requestAnimationFrame(enforceTypewriter);
+    return () => cancelAnimationFrame(id);
+  }, [typewriterMode, enforceTypewriter]);
 
   useEffect(() => {
     if (viewMode) { if (caretRef.current) caretRef.current.style.opacity = "0"; return; }
@@ -1024,8 +1141,16 @@ function NoteEditor({ note, onBack, onSave, onDelete, onTogglePin, mdPreview, on
     return () => { clearTimeout(id); document.removeEventListener("mousedown", handler); };
   }, [showEmojiPicker, showColorPicker]);
 
+  // Close Save As menu on outside click
+  useEffect(() => {
+    if (!askingFormat) return;
+    const handler = (e) => { if (!e.target.closest("[data-saveas]")) setAskingFormat(false); };
+    const id = setTimeout(() => document.addEventListener("mousedown", handler), 0);
+    return () => { clearTimeout(id); document.removeEventListener("mousedown", handler); };
+  }, [askingFormat]);
+
   // ── Save helpers ──────────────────────────────────────────────────────────
-  const resolveAutoExt = () => saveFormat !== "ask" ? saveFormat : (note.fileExt || "md");
+  const resolveAutoExt = () => note.fileExt || (saveFormat !== "ask" ? saveFormat : "md");
 
   const handleSave = (fileExt) => {
     clearTimeout(autoSaveTimer.current);
@@ -1037,11 +1162,29 @@ function NoteEditor({ note, onBack, onSave, onDelete, onTogglePin, mdPreview, on
     setAskingFormat(false);
   };
 
+  // Auto-save when switching away from this tab (isActive flips false) so unsaved edits aren't lost.
+  const wasActiveRef = useRef(isActive);
+  useEffect(() => {
+    if (wasActiveRef.current && !isActive && dirty.current && !viewMode) {
+      handleSave(resolveAutoExt());
+    }
+    wasActiveRef.current = isActive;
+  }, [isActive]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Save on unmount (tab ✕, palette delete of another note, etc.) — the ref
+  // always holds the latest closure so the cleanup sees current state.
+  const saveOnUnmountRef = useRef(() => { });
+  saveOnUnmountRef.current = () => {
+    if (dirty.current && !viewMode) handleSave(resolveAutoExt());
+  };
+  useEffect(() => () => saveOnUnmountRef.current(), []);
+
   useEffect(() => () => clearTimeout(autoSaveTimer.current), []);
 
+  // SAVE — never prompts; uses the note's existing file type.
   const handleSaveClick = () => {
-    if (saveFormat === "ask") setAskingFormat(true);
-    else handleSave(saveFormat);
+    handleSave(resolveAutoExt());
+    showToast("Saved", "success");
   };
 
   const handleExportDocx = async (filePath, html) => {
@@ -1054,24 +1197,27 @@ function NoteEditor({ note, onBack, onSave, onDelete, onTogglePin, mdPreview, on
     dirty.current = false; setAskingFormat(false);
   };
 
-  const handleSaveToPath = async () => {
+  // Save As — opens system file dialog. Optionally restrict to a single format.
+  const handleSaveToPath = async (onlyExt) => {
     const noteTitle = title.trim() || "Untitled";
     const content = editorRef.current?.innerHTML || "";
-    const path = await saveDialog({
-      defaultPath: noteTitle,
-      filters: [
-        { name: "Markdown", extensions: ["md"] },
-        { name: "Text", extensions: ["txt"] },
-        { name: "Word Document", extensions: ["docx"] },
-      ],
-    });
+    const allFilters = [
+      { name: "Markdown",      extensions: ["md"] },
+      { name: "Text",          extensions: ["txt"] },
+      { name: "Word Document", extensions: ["docx"] },
+    ];
+    const filters = onlyExt ? allFilters.filter(f => f.extensions[0] === onlyExt) : allFilters;
+    const defaultPath = onlyExt ? `${noteTitle}.${onlyExt}` : noteTitle;
+    const path = await saveDialog({ defaultPath, filters });
     if (!path) return;
     if (path.toLowerCase().endsWith(".docx")) {
       await handleExportDocx(path, content);
+      showToast("Exported .docx", "success");
       return;
     }
     await saveNoteTo(note.id, path, { title: noteTitle, content });
     dirty.current = false; setAskingFormat(false);
+    showToast("Saved to disk", "success");
   };
 
   const toggleMdPreview = () => {
@@ -1099,14 +1245,63 @@ function NoteEditor({ note, onBack, onSave, onDelete, onTogglePin, mdPreview, on
   const handleCopyMd = async () => {
     const html = editorRef.current?.innerHTML || note.content || "";
     const md = td.turndown(html);
-    await navigator.clipboard.writeText(md).catch(() => { });
+    try {
+      await navigator.clipboard.writeText(md);
+      showToast("Copied as Markdown", "success");
+    } catch {
+      showToast("Copy failed", "error");
+    }
+  };
+
+  // ── Paste (context menu) — execCommand("paste") is blocked in WebView2 ────
+  const handlePaste = async () => {
+    editorRef.current?.focus();
+    try {
+      const items = await navigator.clipboard.read();
+      for (const item of items) {
+        const imgType = item.types.find((t) => t.startsWith("image/"));
+        if (imgType) {
+          const blob = await item.getType(imgType);
+          const dataUrl = await new Promise((res, rej) => {
+            const r = new FileReader();
+            r.onload = () => res(r.result);
+            r.onerror = rej;
+            r.readAsDataURL(blob);
+          });
+          document.execCommand("insertHTML", false, `<img src="${dataUrl}" />`);
+          return;
+        }
+      }
+    } catch { /* fall through to text */ }
+    try {
+      const text = await navigator.clipboard.readText();
+      if (text) document.execCommand("insertText", false, text);
+    } catch {
+      showToast("Clipboard unavailable", "error");
+    }
+  };
+
+  // ── Checklist checkbox toggle — mirror the live property into the attribute
+  // so innerHTML serialization keeps the state, and drive the .checked style.
+  const handleEditorClick = (e) => {
+    const cb = e.target;
+    if (!(cb instanceof HTMLInputElement) || cb.type !== "checkbox") return;
+    const item = cb.closest(".checklist-item");
+    if (cb.checked) { cb.setAttribute("checked", ""); item?.classList.add("checked"); }
+    else { cb.removeAttribute("checked"); item?.classList.remove("checked"); }
+    editorRef.current?.dispatchEvent(new Event("input", { bubbles: true }));
   };
 
   // ── Snapshot ──────────────────────────────────────────────────────────────
   const handleSnapshot = async () => {
     const content = editorRef.current?.innerHTML || note.content || "";
-    await saveSnapshot(note.id, content, title.trim() || "Untitled");
-    if (showSnapshots) loadSnapshots();
+    try {
+      await saveSnapshot(note.id, content, title.trim() || "Untitled");
+      showToast("Snapshot saved", "success");
+      if (showSnapshots) loadSnapshots();
+    } catch (err) {
+      showToast("Snapshot failed", "error");
+    }
   };
 
   const loadSnapshots = async () => {
@@ -1125,7 +1320,7 @@ function NoteEditor({ note, onBack, onSave, onDelete, onTogglePin, mdPreview, on
   };
 
   const handleRestoreSnapshot = async (path) => {
-    if (!window.confirm("Restore this snapshot? Current content will be replaced.")) return;
+    if (!await tauriConfirm("Restore this snapshot? Current content will be replaced.", { title: "Restore snapshot", kind: "warning" })) return;
     const content = await readSnapshot(path);
     if (editorRef.current) editorRef.current.innerHTML = content;
     dirty.current = true;
@@ -1143,9 +1338,77 @@ function NoteEditor({ note, onBack, onSave, onDelete, onTogglePin, mdPreview, on
     loadAutoSnapshots();
   };
 
+  // ── Checklist Enter handling ──────────────────────────────────────────────
+  // Default Enter splits the flex div into a checkbox-less clone that can render
+  // zero-height, so the caret looks stuck. Continue the checklist ourselves;
+  // an empty item exits back to a plain paragraph (like lists do).
+  const handleChecklistEnter = (e) => {
+    const sel = window.getSelection();
+    if (!sel?.rangeCount) return false;
+    let node = sel.anchorNode;
+    if (node?.nodeType === Node.TEXT_NODE) node = node.parentElement;
+    const item = node?.closest?.(".checklist-item");
+    if (!item || !editorRef.current?.contains(item)) return false;
+    e.preventDefault();
+
+    const placeCaret = (target) => {
+      const r = document.createRange();
+      r.selectNodeContents(target);
+      r.collapse(true);
+      sel.removeAllRanges();
+      sel.addRange(r);
+    };
+
+    const itemText = (item.textContent || "").replace(/ /g, " ").trim();
+    if (!itemText) {
+      const p = document.createElement("p");
+      p.appendChild(document.createElement("br"));
+      item.replaceWith(p);
+      placeCaret(p);
+    } else {
+      const range = sel.getRangeAt(0);
+      range.deleteContents();
+      const newItem = document.createElement("div");
+      newItem.className = "checklist-item";
+      const cb = document.createElement("input");
+      cb.type = "checkbox";
+      const newSpan = document.createElement("span");
+      const span = item.querySelector("span");
+      if (span && span.contains(range.startContainer)) {
+        const rest = document.createRange();
+        rest.setStart(range.startContainer, range.startOffset);
+        rest.setEnd(span, span.childNodes.length);
+        newSpan.appendChild(rest.extractContents());
+      }
+      if (!newSpan.textContent) newSpan.innerHTML = "&nbsp;";
+      newItem.append(cb, newSpan);
+      item.after(newItem);
+      placeCaret(newSpan);
+    }
+    editorRef.current.dispatchEvent(new Event("input", { bubbles: true }));
+    return true;
+  };
+
+  // ── Copy image to clipboard ───────────────────────────────────────────────
+  const handleCopyImage = async (img) => {
+    try {
+      const canvas = document.createElement("canvas");
+      canvas.width = img.naturalWidth || img.width;
+      canvas.height = img.naturalHeight || img.height;
+      canvas.getContext("2d").drawImage(img, 0, 0);
+      const blob = await new Promise((res, rej) =>
+        canvas.toBlob((b) => (b ? res(b) : rej(new Error("toBlob failed"))), "image/png"));
+      await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
+      showToast("Image copied", "success");
+    } catch {
+      showToast("Couldn't copy image", "error");
+    }
+  };
+
   // ── Editor context menu ───────────────────────────────────────────────────
   const handleEditorContextMenu = (e) => {
     e.preventDefault();
+    const imgTarget = e.target.closest?.("img");
     const hasSelection = !!window.getSelection()?.toString();
     const { word, range: wordRange } = getWordAtPoint(e.clientX, e.clientY);
     const savedRange = wordRange ? wordRange.cloneRange() : null;
@@ -1172,11 +1435,14 @@ function NoteEditor({ note, onBack, onSave, onDelete, onTogglePin, mdPreview, on
           })),
           { separator: true },
         ] : []),
+        ...(imgTarget ? [
+          { icon: <Copy size={11} />, label: "Copy Image", action: () => handleCopyImage(imgTarget) },
+        ] : []),
         ...(hasSelection ? [
           { icon: <Scissors size={11} />, label: "Cut", shortcut: "Ctrl+X", action: () => document.execCommand("cut") },
           { icon: <Copy size={11} />, label: "Copy", shortcut: "Ctrl+C", action: () => document.execCommand("copy") },
         ] : []),
-        { label: "Paste", shortcut: "Ctrl+V", action: () => document.execCommand("paste") },
+        { label: "Paste", shortcut: "Ctrl+V", action: handlePaste },
         { label: "Select All", shortcut: "Ctrl+A", action: () => document.execCommand("selectAll") },
         { separator: true },
         { label: spellcheck ? "✓ Spell Check" : "Spell Check", action: () => setSpellcheck(!spellcheck) },
@@ -1188,13 +1454,18 @@ function NoteEditor({ note, onBack, onSave, onDelete, onTogglePin, mdPreview, on
           : [{ icon: <Lock size={11} />, label: "Remove Note Lock", action: () => setNotePasscode(note.id, null) }]
         ),
         { separator: true },
-        { icon: <Trash2 size={11} />, label: "Delete Note", danger: true, action: () => { if (window.confirm("Delete this note?")) onDelete(); } },
+        { icon: <Trash2 size={11} />, label: "Delete Note", danger: true, action: async () => { if (await tauriConfirm("Delete this note?", { title: "Delete note", kind: "warning" })) onDelete(); } },
       ],
     });
   };
 
   // ── Wiki link navigation + collapsible headings ───────────────────────────
   const handleContentClick = (e) => {
+    // Read-only views: don't let checkboxes toggle — the change would never persist
+    if (e.target instanceof HTMLInputElement && e.target.type === "checkbox") {
+      e.preventDefault();
+      return;
+    }
     const link = e.target.closest("[data-wikilink]");
     if (link) { onNavigate(decodeURIComponent(link.dataset.wikilink)); return; }
 
@@ -1209,7 +1480,8 @@ function NoteEditor({ note, onBack, onSave, onDelete, onTogglePin, mdPreview, on
   };
 
   // ── Rendered HTML with wiki links ─────────────────────────────────────────
-  const processedContent = processWikiLinks(note.content || "");
+  const noteTitles = new Set(notes.map((n) => (n.title || "Untitled").toLowerCase()));
+  const processedContent = processWikiLinks(note.content || "", noteTitles);
 
   // Per-note passcode gate
   if (showNotePasscode) {
@@ -1237,8 +1509,47 @@ function NoteEditor({ note, onBack, onSave, onDelete, onTogglePin, mdPreview, on
     );
   }
 
+  // Active mode chips shown top-right so users can see + dismiss what's on.
+  const activeModes = [
+    typewriterMode      && { id: "typewriter", label: "Typewriter", off: () => setTypewriterMode(false) },
+    paragraphFocusMode  && { id: "focus",      label: "Focus",      off: () => setParagraphFocusMode(false) },
+    scratchOpen         && { id: "scratch",    label: "Research",   off: () => setScratchOpen(false) },
+    mdPreview           && { id: "mdpreview",  label: "MD Preview", off: () => onMdPreviewChange(false) },
+    zenMode             && { id: "zen",        label: "Zen",        off: () => onZenChange(false) },
+  ].filter(Boolean);
+
+  // Compact chip used for the mode indicator
+  const renderModeChip = (m) => (
+    <button
+      key={m.id}
+      onClick={m.off}
+      title={`${m.label} mode is on — click to turn off`}
+      className="group flex items-center gap-1 px-2 py-0.5 rounded-full border border-amber-500/40 bg-amber-500/10 text-amber-300 hover:bg-amber-500/20 hover:text-amber-100 text-[9px] font-bold uppercase tracking-wider transition-colors shadow-lg backdrop-blur-sm"
+    >
+      <span>{m.label}</span>
+      <X size={9} className="opacity-70 group-hover:opacity-100" />
+    </button>
+  );
+
   return (
-    <div className={`flex flex-col flex-1 min-h-0 ${zenMode ? "zen-mode" : ""}`}>
+    <div className={`relative flex flex-col flex-1 min-h-0 ${zenMode ? "zen-mode" : ""}`}>
+      {/* Zen-mode floating chips (header is hidden, so overlay top-right of editor) */}
+      {zenMode && activeModes.length > 0 && (
+        <div className="absolute top-3 right-12 z-50 flex flex-wrap gap-1 justify-end">
+          {activeModes.map(renderModeChip)}
+        </div>
+      )}
+
+      {/* Transient toast (snapshot saved, etc.) */}
+      {toast && (
+        <div
+          className={`absolute top-2 left-1/2 -translate-x-1/2 z-[60] px-3 py-1.5 rounded text-[10px] font-semibold tracking-wide shadow-2xl pointer-events-none
+            ${toast.kind === "success" ? "bg-emerald-900/95 text-emerald-100 border border-emerald-700"
+              : toast.kind === "error"   ? "bg-red-900/95 text-red-100 border border-red-700"
+              : "bg-zinc-800/95 text-zinc-100 border border-zinc-700"}`}>
+          {toast.msg}
+        </div>
+      )}
       {/* Editor header (hidden in zen mode) */}
       {!zenMode && (
         <div className="flex items-center gap-2 px-3 py-2 border-b border-zinc-700 shrink-0 surface-900">
@@ -1438,19 +1749,48 @@ function NoteEditor({ note, onBack, onSave, onDelete, onTogglePin, mdPreview, on
               </div>
             )}
 
-            {!viewMode && !mdPreview && (
-              askingFormat ? (
-                <div className="flex items-center gap-1">
-                  <button onClick={() => handleSave("md")} className="px-2 py-1 rounded bg-zinc-950 border border-zinc-800 text-zinc-300 text-[10px] font-bold tracking-wider hover:bg-zinc-900 transition-colors">.md</button>
-                  <button onClick={() => handleSave("txt")} className="px-2 py-1 rounded bg-zinc-700 border border-zinc-600 text-zinc-300 text-[10px] font-bold tracking-wider hover:bg-zinc-600 transition-colors">.txt</button>
-                  <button onClick={handleSaveToPath} title="Save to…" className="p-1 rounded border border-zinc-700 bg-zinc-900 text-zinc-400 hover:text-zinc-200 hover:border-zinc-600 transition-colors"><FolderOpen size={13} /></button>
-                  <button onClick={() => setAskingFormat(false)} className="p-1 rounded text-zinc-600 hover:text-zinc-400 transition-colors"><X size={10} /></button>
-                </div>
-              ) : (
-                <button onClick={handleSaveClick} className="btn btn-primary">SAVE</button>
-              )
+            {/* Active mode chips — sit beside the SAVE button so the user sees what's on */}
+            {!zenMode && activeModes.length > 0 && (
+              <div className="flex items-center gap-1 mr-1">
+                {activeModes.map(renderModeChip)}
+              </div>
             )}
-            <button onClick={() => { if (window.confirm("Delete this note?")) onDelete(); }}
+
+            {!viewMode && !mdPreview && (
+              <div className="relative flex items-stretch" data-saveas>
+                <button onClick={handleSaveClick} title={`Save (.${resolveAutoExt()})`} className="btn btn-primary rounded-r-none pr-2">SAVE</button>
+                <button
+                  onClick={() => setAskingFormat((s) => !s)}
+                  title="Save As…"
+                  className="btn btn-primary rounded-l-none border-l border-black/20 px-1.5 flex items-center"
+                >
+                  <ChevronDown size={11} />
+                </button>
+                {askingFormat && (
+                  <div className="absolute top-full right-0 z-50 mt-1 min-w-[200px] bg-zinc-950 border border-zinc-700 rounded-lg shadow-2xl py-1">
+                    <div className="px-3 py-1 text-[8px] font-bold uppercase tracking-widest text-zinc-600 border-b border-zinc-800">Save As</div>
+                    <button onClick={() => { handleSave("md");  setAskingFormat(false); showToast("Saved as .md", "success"); }}
+                      className="w-full flex items-center justify-between px-3 py-1.5 text-[11px] text-left text-zinc-300 hover:bg-zinc-800 hover:text-white transition-colors">
+                      <span>Markdown</span><span className="font-mono text-[10px] text-zinc-600">.md</span>
+                    </button>
+                    <button onClick={() => { handleSave("txt"); setAskingFormat(false); showToast("Saved as .txt", "success"); }}
+                      className="w-full flex items-center justify-between px-3 py-1.5 text-[11px] text-left text-zinc-300 hover:bg-zinc-800 hover:text-white transition-colors">
+                      <span>Plain text</span><span className="font-mono text-[10px] text-zinc-600">.txt</span>
+                    </button>
+                    <button onClick={() => { setAskingFormat(false); handleSaveToPath("docx"); }}
+                      className="w-full flex items-center justify-between px-3 py-1.5 text-[11px] text-left text-zinc-300 hover:bg-zinc-800 hover:text-white transition-colors">
+                      <span>Word Document</span><span className="font-mono text-[10px] text-zinc-600">.docx</span>
+                    </button>
+                    <div className="border-t border-zinc-800 my-0.5" />
+                    <button onClick={() => { setAskingFormat(false); handleSaveToPath(); }}
+                      className="w-full flex items-center gap-2 px-3 py-1.5 text-[11px] text-left text-zinc-300 hover:bg-zinc-800 hover:text-white transition-colors">
+                      <FolderOpen size={11} /><span>Save to disk…</span>
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+            <button onClick={async () => { if (await tauriConfirm("Delete this note?", { title: "Delete note", kind: "warning" })) onDelete(); }}
               className="p-1.5 rounded text-zinc-600 hover:text-red-400 hover:bg-red-950 transition-colors">
               <Trash2 size={13} />
             </button>
@@ -1529,16 +1869,22 @@ function NoteEditor({ note, onBack, onSave, onDelete, onTogglePin, mdPreview, on
 
       {/* MD Preview */}
       {mdPreview && (
-        <div className="flex-1 overflow-y-auto px-4 py-3 signalpad-content md-preview bg-zinc-950"
-          onClick={handleContentClick}
-          dangerouslySetInnerHTML={{ __html: processWikiLinks(marked.parse(mdText)) }} />
+        <div className={`flex-1 flex min-h-0 relative${wellCls}`}>
+          {frameDecor}
+          <div className={`flex-1 overflow-y-auto px-4 py-3 signalpad-content md-preview bg-zinc-950${pageCls}`}
+            onClick={handleContentClick}
+            dangerouslySetInnerHTML={{ __html: processWikiLinks(marked.parse(mdText), noteTitles) }} />
+        </div>
       )}
 
       {/* Pinned view */}
       {!mdPreview && viewMode && (
-        <div className="flex-1 overflow-y-auto px-4 py-3 signalpad-content bg-zinc-950"
-          onClick={handleContentClick}
-          dangerouslySetInnerHTML={{ __html: processedContent || "<p class='empty'>This note is empty.</p>" }} />
+        <div className={`flex-1 flex min-h-0 relative${wellCls}`}>
+          {frameDecor}
+          <div className={`flex-1 overflow-y-auto px-4 py-3 signalpad-content bg-zinc-950${pageCls}`}
+            onClick={handleContentClick}
+            dangerouslySetInnerHTML={{ __html: processedContent || "<p class='empty'>This note is empty.</p>" }} />
+        </div>
       )}
 
       {/* Scratch notes panel */}
@@ -1561,16 +1907,22 @@ function NoteEditor({ note, onBack, onSave, onDelete, onTogglePin, mdPreview, on
 
       {/* Edit area */}
       {!viewMode && (
-        <div ref={editorWrapperRef} className={`relative min-h-0 ${mdPreview ? "hidden" : "flex-1"}`}>
+        <div ref={editorWrapperRef} className={`relative min-h-0 ${mdPreview ? "hidden" : "flex-1"}${wellCls}`}>
           <div className={`typewriter-overlay${typewriterMode ? " active" : ""}`} />
           <div ref={caretRef} className="smooth-caret" />
+          {frameDecor}
           <div
             ref={editorRef}
             contentEditable
             suppressContentEditableWarning
             spellCheck={spellcheck}
             lang={spellcheckLang}
+            onClick={handleEditorClick}
             onInput={() => {
+              // Chromium leaves a lone <br> after deleting all text, which defeats
+              // the :empty placeholder — clear it so "Start writing…" returns.
+              const el = editorRef.current;
+              if (el && ["<br>", "<div><br></div>", "<p><br></p>"].includes(el.innerHTML)) el.innerHTML = "";
               dirty.current = true;
               updateWordCount();
               if (autoSaveDelay > 0) {
@@ -1579,10 +1931,11 @@ function NoteEditor({ note, onBack, onSave, onDelete, onTogglePin, mdPreview, on
               }
             }}
             onKeyDown={(e) => {
-              if (e.key === "s" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); handleSaveClick(); }
+              if (e.key === "s" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); handleSaveClick(); return; }
+              if (e.key === "Enter" && !e.shiftKey) handleChecklistEnter(e);
             }}
             onContextMenu={handleEditorContextMenu}
-            className={`absolute inset-0 overflow-y-auto px-4 py-3 focus:outline-none leading-relaxed signalpad-content bg-zinc-950 caret-transparent${mdPreview ? " invisible" : ""}${paragraphFocusMode ? " paragraph-focus-mode" : ""}`}
+            className={`absolute inset-0 overflow-y-auto px-4 py-3 focus:outline-none leading-relaxed signalpad-content bg-zinc-950 caret-transparent${pageCls}${mdPreview ? " invisible" : ""}${paragraphFocusMode ? " paragraph-focus-mode" : ""}${typewriterMode ? " typewriter-active" : ""}`}
             data-placeholder="Start writing…"
           />
         </div>
@@ -1593,7 +1946,7 @@ function NoteEditor({ note, onBack, onSave, onDelete, onTogglePin, mdPreview, on
 
 // ─── Window controls ──────────────────────────────────────────────────────────
 
-function WindowControls() {
+function WindowControls({ showMaximize = false }) {
   const win = getCurrentWindow();
   return (
     <div className="flex items-center gap-1">
@@ -1601,6 +1954,12 @@ function WindowControls() {
         className="w-7 h-7 flex items-center justify-center rounded text-zinc-600 hover:text-zinc-300 hover:bg-zinc-700 transition-colors">
         <Minus size={13} strokeWidth={2} />
       </button>
+      {showMaximize && (
+        <button onClick={() => win.toggleMaximize()} title="Maximize"
+          className="w-7 h-7 flex items-center justify-center rounded text-zinc-600 hover:text-zinc-300 hover:bg-zinc-700 transition-colors">
+          <Square size={11} strokeWidth={2} />
+        </button>
+      )}
       <button onClick={() => win.close()} title="Close"
         className="close-btn w-7 h-7 flex items-center justify-center rounded hover:bg-red-500/95">
         <X size={13} strokeWidth={3} />
@@ -1609,10 +1968,55 @@ function WindowControls() {
   );
 }
 
+// ─── Desktop-mode sidebar ─────────────────────────────────────────────────────
+
+function DesktopSidebar({ pinned, unpinned, activeTabId, onOpen, onContextMenu, onNew }) {
+  const renderRow = (n) => (
+    <button
+      key={n.id}
+      onClick={() => onOpen(n.id)}
+      onContextMenu={(e) => onContextMenu(e, n)}
+      className={`w-full flex items-center gap-2 px-3 py-2 text-left transition-colors border-l-2 ${
+        n.id === activeTabId
+          ? "border-l-[var(--accent)] bg-zinc-900 text-zinc-100"
+          : "border-l-transparent text-zinc-400 hover:bg-zinc-900/60 hover:text-zinc-200"
+      }`}
+    >
+      {n.emoji && <span className="text-[12px] leading-none shrink-0">{n.emoji}</span>}
+      <span className="flex-1 min-w-0">
+        <span className="block text-[11.5px] font-medium truncate">{n.title || "Untitled"}</span>
+        <span className="block text-[9px] text-zinc-600 truncate">{fmtDate(n.updatedAt)}</span>
+      </span>
+      {n.burn && <Flame size={10} className="text-orange-400/70 shrink-0" />}
+      {n.pinned && <Pin size={10} className="pinned-section shrink-0" />}
+    </button>
+  );
+
+  return (
+    <aside className="w-[232px] shrink-0 flex flex-col border-r border-zinc-800 bg-zinc-950">
+      <div className="flex items-center justify-between px-3 py-2 border-b border-zinc-800 shrink-0">
+        <span className="section-label">All Notes</span>
+        <button onClick={onNew} title="New note"
+          className="p-1 rounded text-zinc-600 hover:text-zinc-200 hover:bg-zinc-800 transition-colors">
+          <Plus size={12} />
+        </button>
+      </div>
+      <div className="flex-1 overflow-y-auto py-1">
+        {pinned.map(renderRow)}
+        {pinned.length > 0 && unpinned.length > 0 && <div className="border-t border-zinc-800/80 my-1 mx-3" />}
+        {unpinned.map(renderRow)}
+        {pinned.length === 0 && unpinned.length === 0 && (
+          <p className="px-3 py-4 text-[10px] text-zinc-600">No notes yet.</p>
+        )}
+      </div>
+    </aside>
+  );
+}
+
 // ─── Settings view ────────────────────────────────────────────────────────────
 
 function SettingsView({ onClose }) {
-  const { notes, addedFonts, addFont, removeFont, clearNotes, saveFormat, setSaveFormat, toolbarVisible, setToolbarVisible, theme, setTheme, appPasscode, setAppPasscode, cloudBackupPath, setCloudBackupPath, runCloudBackup, cardScenesEnabled, setCardScenesEnabled, cardDensity, setCardDensity, accentColor, setAccentColor, autoLockMinutes, setAutoLockMinutes, autoBackupSchedule, setAutoBackupSchedule, noteCap, setNoteCap, defaultTemplate, setDefaultTemplate, spellcheck, setSpellcheck, spellcheckLang, setSpellcheckLang, autoSaveDelay, setAutoSaveDelay } = useSignalPadStore();
+  const { notes, addedFonts, addFont, removeFont, clearNotes, saveFormat, setSaveFormat, toolbarVisible, setToolbarVisible, theme, setTheme, appPasscode, setAppPasscode, cloudBackupPath, setCloudBackupPath, runCloudBackup, cardScenesEnabled, setCardScenesEnabled, cardDensity, setCardDensity, accentColor, setAccentColor, autoLockMinutes, setAutoLockMinutes, autoBackupSchedule, setAutoBackupSchedule, noteCap, setNoteCap, defaultTemplate, setDefaultTemplate, spellcheck, setSpellcheck, spellcheckLang, setSpellcheckLang, autoSaveDelay, setAutoSaveDelay, pageStyle, setPageStyle, pageScheme, setPageScheme, pageWidth, setPageWidth } = useSignalPadStore();
   const [tab, setTab] = useState("appearance");
   const [showBrowser, setShowBrowser] = useState(false);
   const [browserSearch, setBrowserSearch] = useState("");
@@ -1694,6 +2098,46 @@ function SettingsView({ onClose }) {
                 </button>
               ))}
             </div>
+          </section>
+
+          <section>
+            <p className="section-label mb-1">Big View Page</p>
+            <p className="text-[10px] text-zinc-600 mb-3">Style of the writing surface in desktop mode.</p>
+            <div className="grid grid-cols-2 gap-1.5 mb-3">
+              {[
+                ["sheet", "Floating Sheet", "Lifted on soft shadows"],
+                ["carved", "Carved Well", "Recessed into the chrome"],
+                ["stack", "Paper Stack", "Sheets peek out behind"],
+                ["frame", "Drafting Frame", "Blueprint grid + corners"],
+              ].map(([v, l, d]) => (
+                <button key={v} onClick={() => setPageStyle(v)}
+                  className={`py-2 px-3 rounded-lg border text-left transition-colors ${pageStyle === v ? "border-[var(--accent)] bg-[var(--accent-bg)]" : "border-zinc-700 bg-zinc-900 hover:border-zinc-600"}`}>
+                  <p className={`text-[11px] font-bold ${pageStyle === v ? "text-[var(--accent)]" : "text-zinc-300"}`}>{l}</p>
+                  <p className="text-[9px] text-zinc-600 mt-0.5">{d}</p>
+                </button>
+              ))}
+            </div>
+            <p className="text-[10px] text-zinc-500 mb-2">Page color</p>
+            <div className="flex gap-1.5 mb-3">
+              {[["theme", "Match theme"], ["light", "Light"], ["dark", "Dark"]].map(([v, l]) => (
+                <button key={v} onClick={() => setPageScheme(v)}
+                  className={`flex-1 py-1.5 rounded border text-[10px] transition-colors ${pageScheme === v ? "border-zinc-700 bg-zinc-950 text-zinc-300" : "border-zinc-700 bg-zinc-900 text-zinc-500 hover:text-zinc-200 hover:border-zinc-600"}`}>
+                  {l}
+                </button>
+              ))}
+            </div>
+            <p className="text-[10px] text-zinc-500 mb-2">Page width</p>
+            <div className="flex gap-1.5">
+              {[["narrow", "Narrow"], ["standard", "Standard"], ["wide", "Wide"]].map(([v, l]) => (
+                <button key={v} onClick={() => setPageWidth(v)}
+                  className={`flex-1 py-1.5 rounded border text-[10px] transition-colors ${pageWidth === v ? "border-zinc-700 bg-zinc-950 text-zinc-300" : "border-zinc-700 bg-zinc-900 text-zinc-500 hover:text-zinc-200 hover:border-zinc-600"}`}>
+                  {l}
+                </button>
+              ))}
+            </div>
+            <p className="text-[10px] text-zinc-700 mt-2">
+              {pageWidth === "narrow" ? "Focused column — best for prose." : pageWidth === "wide" ? "Roomy column — best for tables and lists." : "Standard document width."}
+            </p>
           </section>
 
           <section>
@@ -1809,14 +2253,17 @@ function SettingsView({ onClose }) {
               </button>
             </div>
             {spellcheck && (
-              <div className="flex gap-1.5 flex-wrap">
-                {[["en-US", "English (US)"], ["en-GB", "English (UK)"], ["es", "Spanish"], ["fr", "French"], ["de", "German"]].map(([v, l]) => (
-                  <button key={v} onClick={() => setSpellcheckLang(v)}
-                    className={`px-2.5 py-1 rounded border text-[10px] transition-colors ${spellcheckLang === v ? "border-zinc-700 bg-zinc-950 text-zinc-300" : "border-zinc-700 bg-zinc-900 text-zinc-500 hover:text-zinc-200"}`}>
-                    {l}
-                  </button>
-                ))}
-              </div>
+              <>
+                <div className="flex gap-1.5 flex-wrap">
+                  {[["en-US", "English (US)"], ["en-GB", "English (UK)"]].map(([v, l]) => (
+                    <button key={v} onClick={() => setSpellcheckLang(v)}
+                      className={`px-2.5 py-1 rounded border text-[10px] transition-colors ${spellcheckLang === v ? "border-zinc-700 bg-zinc-950 text-zinc-300" : "border-zinc-700 bg-zinc-900 text-zinc-500 hover:text-zinc-200"}`}>
+                      {l}
+                    </button>
+                  ))}
+                </div>
+                <p className="text-[10px] text-zinc-700 mt-2">Suggestions use an English dictionary. More languages later.</p>
+              </>
             )}
           </section>
 
@@ -1871,7 +2318,7 @@ function SettingsView({ onClose }) {
                 <Lock size={12} /> Set app passcode
               </button>
             )}
-            <p className="text-[10px] text-zinc-700 mt-2">Locks the entire app on launch. Per-note locks are available via the note context menu.</p>
+            <p className="text-[10px] text-zinc-700 mt-2">Locks the entire app on launch. Per-note locks are available via the note context menu. Locks deter casual access — note files on disk remain unencrypted.</p>
           </section>
 
           <section>
@@ -1988,7 +2435,7 @@ function SettingsView({ onClose }) {
                 <NotebookPen size={12} className="app-name" />
                 <span className="text-[11px] font-bold tracking-wider app-name">SignalPad</span>
               </div>
-              <p className="text-[10px] text-zinc-600">Version 0.1.0 · A minimal, focused note-taking app.</p>
+              <p className="text-[10px] text-zinc-600">Version {changelog.history[0]?.version ?? "0.1.0"} · A minimal, focused note-taking app.</p>
             </div>
           </section>
         </>)}
@@ -2061,7 +2508,7 @@ const FEATURE_SECTIONS = [
   },
 ];
 
-function HelpView({ onClose }) {
+function HelpView({ onClose, onShowChangelog }) {
   return (
     <div className="flex flex-col flex-1 min-h-0">
       <div className="flex items-center gap-2 px-3 py-2 border-b border-zinc-700 shrink-0">
@@ -2134,7 +2581,7 @@ function HelpView({ onClose }) {
         {/* ── Version ── */}
         <section>
           <button
-            onClick={() => setShowChangelog(true)}
+            onClick={onShowChangelog}
             className="w-full px-3 py-3 rounded border border-zinc-800 bg-zinc-900/30 flex items-center gap-2 hover:border-zinc-700 hover:bg-zinc-800/40 transition-colors text-left"
           >
             <NotebookPen size={13} className="app-name shrink-0" />
@@ -2154,7 +2601,7 @@ function HelpView({ onClose }) {
 // ─── Main SignalPad ───────────────────────────────────────────────────────────
 
 export default function SignalPad() {
-  const { notes, addNote, updateNote, deleteNote, togglePin, init, loading, importNote, importDocxNote, noteOrder, appPasscode, noteScenes, setNoteScene, accentColor, autoLockMinutes, autoBackupSchedule, cloudBackupPath, runCloudBackup, noteCap, cardScenesEnabled, cardDensity } = useSignalPadStore();
+  const { notes, addNote, updateNote, deleteNote, togglePin, init, loading, importNote, importDocxNote, noteOrder, appPasscode, noteScenes, setNoteScene, accentColor, autoLockMinutes, autoBackupSchedule, cloudBackupPath, runCloudBackup, noteCap, cardScenesEnabled, cardDensity, desktopMode, setDesktopMode } = useSignalPadStore();
 
   const [openTabs, setOpenTabs] = useState([]);
   const [activeTabId, setActiveTabId] = useState(null);
@@ -2193,6 +2640,10 @@ export default function SignalPad() {
       return next;
     });
     setEditorWordCount(0);
+    // Burn-after-reading fires however the note is closed — tab ✕ included,
+    // not just the editor's back button.
+    const { notes: cur, deleteNote: del } = useSignalPadStore.getState();
+    if (cur.find((n) => n.id === id)?.burn) del(id);
   }, []);
 
   useEffect(() => { init(); }, []);
@@ -2236,22 +2687,36 @@ export default function SignalPad() {
     return () => clearInterval(id);
   }, [cloudBackupPath, autoBackupSchedule]);
 
-  // ── Resize window when switching between list and editor ─────────────────
+  // ── Resize window between layouts: list, editor, desktop (Big View) ───────
+  // Only act on layout boundaries — re-running on every tab-count change would
+  // stomp a manually resized window.
+  const prevLayoutRef = useRef(null);
   useEffect(() => {
-    const win = getCurrentWindow();
     const inEditor = openTabs.length > 0;
-    if (inEditor) {
+    const layout = desktopMode ? "desktop" : inEditor ? "editor" : "list";
+    if (prevLayoutRef.current === layout) return;
+    const wasDesktop = prevLayoutRef.current === "desktop";
+    prevLayoutRef.current = layout;
+    const win = getCurrentWindow();
+    if (layout === "desktop") {
+      win.setResizable(true).catch(() => { });
+      win.setMaxSize(null).catch(() => { });
+      win.setMinSize(new LogicalSize(880, 600)).catch(() => { });
+      win.setSize(new LogicalSize(1180, 760)).catch(() => { });
+    } else if (layout === "editor") {
+      if (wasDesktop) win.unmaximize().catch(() => { });
       win.setResizable(true).catch(() => { });
       win.setMaxSize(null).catch(() => { });
       win.setMinSize(new LogicalSize(560, 580)).catch(() => { });
       win.setSize(new LogicalSize(680, 720)).catch(() => { });
     } else {
+      if (wasDesktop) win.unmaximize().catch(() => { });
       win.setMaxSize(new LogicalSize(560, 660)).catch(() => { });
       win.setMinSize(new LogicalSize(560, 660)).catch(() => { });
       win.setSize(new LogicalSize(560, 660)).catch(() => { });
       win.setResizable(false).catch(() => { });
     }
-  }, [openTabs.length]);
+  }, [openTabs.length, desktopMode]);
 
   // ── Suppress default browser context menu globally ────────────────────────
   useEffect(() => {
@@ -2262,7 +2727,9 @@ export default function SignalPad() {
 
   // ── Global hotkey (Ctrl+Shift+N) ─────────────────────────────────────────
   useEffect(() => {
-    registerShortcut("CommandOrControl+Shift+N", async () => {
+    registerShortcut("CommandOrControl+Shift+N", async (event) => {
+      // Plugin fires on both key-down and key-up — only act on the press
+      if (event?.state === "Released") return;
       await invoke("focus_main_window").catch(() => { });
       const id = await addNote();
       if (id) openTab(id);
@@ -2363,7 +2830,7 @@ export default function SignalPad() {
         { icon: n.pinned ? <PinOff size={11} /> : <Pin size={11} />, label: n.pinned ? "Unpin" : "Pin", action: () => togglePin(n.id) },
         { icon: <FolderOpen size={13} />, label: "Reveal in Folder", action: () => invoke("reveal_note", { noteId: n.id, fileExt: n.fileExt || "md" }) },
         { separator: true },
-        { icon: <Trash2 size={11} />, label: "Delete", danger: true, action: () => { if (window.confirm(`Delete "${n.title || "Untitled"}"?`)) deleteNote(n.id); } },
+        { icon: <Trash2 size={11} />, label: "Delete", danger: true, action: async () => { if (await tauriConfirm(`Delete "${n.title || "Untitled"}"?`, { title: "Delete note", kind: "warning" })) deleteNote(n.id); } },
       ],
     });
   };
@@ -2417,6 +2884,99 @@ export default function SignalPad() {
       </div>
     );
   }
+
+  // Shared body chunks — used by both the compact layout and the desktop split view.
+  // All open tabs render simultaneously; only the active tab is visible.
+  const editorsBody = (
+    <>
+      {openTabs.map((tabId) => {
+        const tn = notes.find((n) => n.id === tabId);
+        if (!tn) return null;
+        const isActiveTab = tabId === activeTabId;
+        return (
+          <div key={tabId} style={{ display: isActiveTab ? "flex" : "none", flexDirection: "column", flex: 1, minHeight: 0 }}>
+            <NoteEditor
+              note={tn}
+              isActive={isActiveTab}
+              desktopMode={desktopMode}
+              onBack={() => closeTab(tabId)}
+              onSave={(changes) => updateNote(tabId, changes)}
+              onDelete={() => { deleteNote(tabId); closeTab(tabId); }}
+              onTogglePin={() => togglePin(tabId)}
+              mdPreview={isActiveTab ? mdPreview : false}
+              onMdPreviewChange={isActiveTab ? setMdPreview : () => { }}
+              zenMode={isActiveTab ? zenMode : false}
+              onZenChange={isActiveTab ? setZenMode : () => { }}
+              onNavigate={handleWikiNavigate}
+              onShowContextMenu={setContextMenu}
+              onWordCountChange={isActiveTab ? setEditorWordCount : () => { }}
+            />
+          </div>
+        );
+      })}
+    </>
+  );
+
+  const listBody = (
+    <div className="flex-1 overflow-y-auto px-3 py-3 space-y-4 bg-zinc-950" onContextMenu={buildListMenu}>
+      {filteredPinned.length > 0 && (
+        <section>
+          <div className="flex items-center gap-1.5 mb-2 px-0.5 text-zinc-600">
+            <Pin size={9} className="pinned-section" />
+            <span className="section-label">Pinned</span>
+          </div>
+          <div className="space-y-2">
+            {filteredPinned.map((n) => (
+              <NoteCard key={n.id} note={n} onClick={() => openTab(n.id)}
+                onReveal={() => invoke("reveal_note", { noteId: n.id, fileExt: n.fileExt || "md" })}
+                onDelete={() => deleteNote(n.id)}
+                onContextMenu={(e) => buildCardMenu(e, n)}
+                sceneId={noteScenes[n.id] ?? null}
+                onSetScene={setNoteScene}
+                cardScenesEnabled={cardScenesEnabled}
+                density={cardDensity} />
+            ))}
+          </div>
+        </section>
+      )}
+      {filteredUnpinned.length > 0 && (
+        <section>
+          {filteredPinned.length > 0 && (
+            <div className="flex items-center gap-1.5 mb-2 px-0.5">
+              <BookOpen size={9} className="text-zinc-600" />
+              <span className="section-label">Notes</span>
+            </div>
+          )}
+          <div className="space-y-2">
+            {filteredUnpinned.map((n) => (
+              <NoteCard key={n.id} note={n} onClick={() => openTab(n.id)}
+                onReveal={() => invoke("reveal_note", { noteId: n.id, fileExt: n.fileExt || "md" })}
+                onDelete={() => deleteNote(n.id)}
+                onContextMenu={(e) => buildCardMenu(e, n)}
+                draggable={!activeTag}
+                onGripPointerDown={handleGripPointerDown}
+                dragOver={dragOverId === n.id}
+                isDragging={dragId === n.id}
+                sceneId={noteScenes[n.id] ?? null}
+                onSetScene={setNoteScene}
+                cardScenesEnabled={cardScenesEnabled}
+                density={cardDensity}
+              />
+            ))}
+          </div>
+        </section>
+      )}
+      {notes.length === 0 && !loading && (
+        <div className="flex flex-col items-center justify-center h-48 gap-3 text-center">
+          <NotebookPen size={28} className="text-zinc-700" />
+          <div>
+            <p className="text-sm text-zinc-500 font-medium">No notes yet</p>
+            <p className="text-[11px] text-zinc-700 mt-1">Create a note to get started</p>
+          </div>
+        </div>
+      )}
+    </div>
+  );
 
   return (
     <div className="flex flex-col w-screen h-screen app-glass">
@@ -2485,11 +3045,15 @@ export default function SignalPad() {
                 className="w-7 h-7 flex items-center justify-center rounded text-zinc-600 hover:text-zinc-300 hover:bg-zinc-700 transition-colors text-[11px] font-mono leading-none">
                 ⌘K
               </button>
+              <button onClick={() => setDesktopMode(!desktopMode)} title={desktopMode ? "Exit desktop mode" : "Desktop mode (big view)"}
+                className={`w-7 h-7 flex items-center justify-center rounded transition-colors ${desktopMode ? "text-zinc-100 bg-zinc-950" : "text-zinc-600 hover:text-zinc-300 hover:bg-zinc-700"}`}>
+                <Monitor size={14} />
+              </button>
               <button onClick={() => (showSettings ? closePanel() : openSettings())} title="Settings"
                 className={`w-7 h-7 flex items-center justify-center rounded transition-colors ${showSettings ? "text-zinc-100 bg-zinc-950" : "text-zinc-600 hover:text-zinc-300 hover:bg-zinc-700"}`}>
                 <Settings size={14} />
               </button>
-              <WindowControls />
+              <WindowControls showMaximize={desktopMode} />
             </div>
           </div>
         )}
@@ -2551,93 +3115,25 @@ export default function SignalPad() {
         {showSettings ? (
           <SettingsView onClose={closePanel} />
         ) : showHelp ? (
-          <HelpView onClose={closePanel} />
-        ) : openTabs.length > 0 && activeTabId !== null ? (
-          /* All open tabs rendered simultaneously; only active tab is visible */
-          <>
-            {openTabs.map((tabId) => {
-              const tn = notes.find((n) => n.id === tabId);
-              if (!tn) return null;
-              const isActiveTab = tabId === activeTabId;
-              return (
-                <div key={tabId} style={{ display: isActiveTab ? "flex" : "none", flexDirection: "column", flex: 1, minHeight: 0 }}>
-                  <NoteEditor
-                    note={tn}
-                    isActive={isActiveTab}
-                    onBack={() => closeTab(tabId)}
-                    onSave={(changes) => updateNote(tabId, changes)}
-                    onDelete={() => { deleteNote(tabId); closeTab(tabId); }}
-                    onTogglePin={() => togglePin(tabId)}
-                    mdPreview={isActiveTab ? mdPreview : false}
-                    onMdPreviewChange={isActiveTab ? setMdPreview : () => { }}
-                    zenMode={isActiveTab ? zenMode : false}
-                    onZenChange={isActiveTab ? setZenMode : () => { }}
-                    onNavigate={handleWikiNavigate}
-                    onShowContextMenu={setContextMenu}
-                    onWordCountChange={isActiveTab ? setEditorWordCount : () => { }}
-                  />
-                </div>
-              );
-            })}
-          </>
-        ) : (
-          <div className="flex-1 overflow-y-auto px-3 py-3 space-y-4 bg-zinc-950" onContextMenu={buildListMenu}>
-            {filteredPinned.length > 0 && (
-              <section>
-                <div className="flex items-center gap-1.5 mb-2 px-0.5 text-zinc-600">
-                  <Pin size={9} className="pinned-section" />
-                  <span className="section-label">Pinned</span>
-                </div>
-                <div className="space-y-2">
-                  {filteredPinned.map((n) => (
-                    <NoteCard key={n.id} note={n} onClick={() => openTab(n.id)}
-                      onReveal={() => invoke("reveal_note", { noteId: n.id, fileExt: n.fileExt || "md" })}
-                      onContextMenu={(e) => buildCardMenu(e, n)}
-                      sceneId={noteScenes[n.id] ?? null}
-                      onSetScene={setNoteScene}
-                      cardScenesEnabled={cardScenesEnabled}
-                      density={cardDensity} />
-                  ))}
-                </div>
-              </section>
+          <HelpView onClose={closePanel} onShowChangelog={() => setShowChangelog(true)} />
+        ) : desktopMode ? (
+          /* Desktop (Big View) — sidebar for browsing, main column for cards/editor */
+          <div className="flex flex-1 min-h-0">
+            {!zenMode && (
+              <DesktopSidebar
+                pinned={filteredPinned}
+                unpinned={filteredUnpinned}
+                activeTabId={activeTabId}
+                onOpen={openTab}
+                onContextMenu={buildCardMenu}
+                onNew={handleNew}
+              />
             )}
-            {filteredUnpinned.length > 0 && (
-              <section>
-                {filteredPinned.length > 0 && (
-                  <div className="flex items-center gap-1.5 mb-2 px-0.5">
-                    <BookOpen size={9} className="text-zinc-600" />
-                    <span className="section-label">Notes</span>
-                  </div>
-                )}
-                <div className="space-y-2">
-                  {filteredUnpinned.map((n) => (
-                    <NoteCard key={n.id} note={n} onClick={() => openTab(n.id)}
-                      onReveal={() => invoke("reveal_note", { noteId: n.id, fileExt: n.fileExt || "md" })}
-                      onContextMenu={(e) => buildCardMenu(e, n)}
-                      draggable={!activeTag}
-                      onGripPointerDown={handleGripPointerDown}
-                      dragOver={dragOverId === n.id}
-                      isDragging={dragId === n.id}
-                      sceneId={noteScenes[n.id] ?? null}
-                      onSetScene={setNoteScene}
-                      cardScenesEnabled={cardScenesEnabled}
-                      density={cardDensity}
-                    />
-                  ))}
-                </div>
-              </section>
-            )}
-            {notes.length === 0 && !loading && (
-              <div className="flex flex-col items-center justify-center h-48 gap-3 text-center">
-                <NotebookPen size={28} className="text-zinc-700" />
-                <div>
-                  <p className="text-sm text-zinc-500 font-medium">No notes yet</p>
-                  <p className="text-[11px] text-zinc-700 mt-1">Create a note to get started</p>
-                </div>
-              </div>
-            )}
+            <div className="flex flex-col flex-1 min-w-0">
+              {openTabs.length > 0 && activeTabId !== null ? editorsBody : listBody}
+            </div>
           </div>
-        )}
+        ) : openTabs.length > 0 && activeTabId !== null ? editorsBody : listBody}
 
       </div>{/* end inner padded column */}
 

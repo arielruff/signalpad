@@ -85,7 +85,7 @@ export default function CommandPalette({ notes, onClose, onNavigate, onNew, onDe
               key={item.id}
               onMouseEnter={() => setCursor(i)}
               onMouseDown={() => item.run()}
-              className={`w-full flex items-center gap-2.5 px-3 py-2 text-left transition-colors ${
+              className={`group w-full flex items-center gap-2.5 px-3 py-2 text-left transition-colors ${
                 i === cursor ? "bg-zinc-800/80 text-zinc-100" : "text-zinc-300 hover:bg-zinc-800/50"
               }`}
             >
@@ -97,22 +97,26 @@ export default function CommandPalette({ notes, onClose, onNavigate, onNew, onDe
                 </span>
               )}
               {item.note && (
-                <div className="flex items-center gap-1 shrink-0 opacity-0 group-hover:opacity-100">
-                  <button
+                <span className="flex items-center gap-1 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
+                  <span
+                    role="button"
+                    aria-label={item.note.pinned ? "Unpin" : "Pin"}
                     onMouseDown={(e) => { e.stopPropagation(); onTogglePin(item.note.id); onClose(); }}
-                    className="p-1 rounded hover:bg-zinc-700/60 text-zinc-600 hover:text-amber-400"
+                    className="p-1 rounded hover:bg-zinc-700/60 text-zinc-600 hover:text-amber-400 cursor-pointer"
                     title={item.note.pinned ? "Unpin" : "Pin"}
                   >
                     {item.note.pinned ? <PinOff size={10} /> : <Pin size={10} />}
-                  </button>
-                  <button
+                  </span>
+                  <span
+                    role="button"
+                    aria-label="Delete"
                     onMouseDown={(e) => { e.stopPropagation(); onDelete(item.note.id); onClose(); }}
-                    className="p-1 rounded hover:bg-zinc-700/60 text-zinc-600 hover:text-red-400"
+                    className="p-1 rounded hover:bg-zinc-700/60 text-zinc-600 hover:text-red-400 cursor-pointer"
                     title="Delete"
                   >
                     <Trash2 size={10} />
-                  </button>
-                </div>
+                  </span>
+                </span>
               )}
             </button>
           ))}

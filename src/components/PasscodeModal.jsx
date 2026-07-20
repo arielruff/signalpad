@@ -1,7 +1,9 @@
 import React, { useState, useRef, useEffect } from "react";
 import { Lock, X, Eye, EyeOff } from "lucide-react";
 
-// Simple hash: XOR + base64 (good enough for local note privacy, not cryptographic)
+// Simple hash — deters casual access only, not cryptographic.
+// Password-type locks are stored with a "p:" prefix so the unlock UI knows
+// which input to show; bare values are PIN locks (also all pre-0.1.5 locks).
 function hashPasscode(code) {
   let h = 0;
   for (let i = 0; i < code.length; i++) h = ((h << 5) - h + code.charCodeAt(i)) | 0;
@@ -9,19 +11,19 @@ function hashPasscode(code) {
 }
 
 export function checkPasscode(stored, input) {
-  return stored === hashPasscode(input);
+  if (!stored) return false;
+  return stored.replace(/^p:/, "") === hashPasscode(input);
 }
 
-export function storePasscode(input) {
-  return hashPasscode(input);
+export function storePasscode(input, type = "pin") {
+  return (type === "password" ? "p:" : "") + hashPasscode(input);
 }
 
 // ─── PIN pad ──────────────────────────────────────────────────────────────────
 
-function PinPad({ value, onChange, onSubmit, maxLen = 6 }) {
-  const digits = "123456789 0⌫".split(" ").flatMap(g => g.split(""));
+function PinPad({ value, onChange, onSubmit, minLen = 4, maxLen = 6 }) {
   // layout: 1-9, then [blank, 0, backspace]
-  const keys = ["1","2","3","4","5","6","7","8","9","","0","⌫"];
+  const keys = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "", "0", "⌫"];
 
   return (
     <div className="space-y-3">
@@ -59,6 +61,14 @@ function PinPad({ value, onChange, onSubmit, maxLen = 6 }) {
           );
         })}
       </div>
+      {/* Confirm — PINs shorter than maxLen need an explicit submit */}
+      <button
+        onClick={() => onSubmit(value)}
+        disabled={value.length < minLen}
+        className="w-full h-9 rounded-lg text-[12px] font-bold border transition-colors border-[var(--accent)] bg-[var(--accent-bg)] text-[var(--accent)] hover:opacity-80 disabled:opacity-30 disabled:cursor-not-allowed"
+      >
+        OK
+      </button>
     </div>
   );
 }
@@ -97,19 +107,22 @@ function PasswordInput({ value, onChange, onSubmit, placeholder = "Enter passwor
 // ─── Main modal ───────────────────────────────────────────────────────────────
 
 export default function PasscodeModal({
-  mode,          // "unlock" | "set" | "change"
-  type,          // "pin" | "password"
-  storedHash,    // for unlock/change
+  mode,          // "unlock" | "set"
+  type,          // "pin" | "password" — initial type; unlock auto-detects from the stored hash
+  storedHash,    // for unlock
   title,
   onSuccess,
   onCancel,
 }) {
-  const [step, setStep] = useState(mode === "change" ? "verify" : mode === "set" ? "enter" : "enter");
+  const [step, setStep] = useState("enter");
   const [pin, setPin] = useState("");
   const [password, setPassword] = useState("");
-  const [confirm, setConfirm] = useState("");
   const [error, setError] = useState("");
-  const [localType, setLocalType] = useState(type || "pin");
+  const [firstEntry, setFirstEntry] = useState("");
+  const isUnlock = mode === "unlock";
+  const [localType, setLocalType] = useState(() =>
+    isUnlock && storedHash?.startsWith("p:") ? "password" : (type || "pin")
+  );
 
   const handleUnlockSubmit = (value) => {
     if (!value) return;
@@ -122,43 +135,16 @@ export default function PasscodeModal({
     }
   };
 
-  const handleSetSubmit = (value) => {
-    if (!value || value.length < (localType === "pin" ? 4 : 6)) {
-      setError(localType === "pin" ? "Need at least 4 digits" : "Need at least 6 characters");
-      return;
-    }
-    if (step === "enter") {
-      setStep("confirm");
-      setPin(""); setPassword("");
-      setError("");
-    } else {
-      // confirm step
-      if (value !== (localType === "pin" ? pin : confirm)) {
-        // For pin: value IS the new pin in confirm step
-        // We store the first entry in pin/password state
-      }
-      // compare first entry vs this
-      const first = localType === "pin" ? pin : password;
-      if (value !== first && step === "confirm") {
-        // first entry was stored before clearing — need to re-store
-      }
-      setError("Mismatch — try again");
-      setStep("enter");
-      setPin(""); setPassword("");
-    }
-  };
-
-  // Cleaner set flow
-  const [firstEntry, setFirstEntry] = useState("");
-
   const handleSetPin = (v) => {
+    if (v.length < 4) { setError("Need at least 4 digits"); return; }
+    setError("");
     if (step === "enter") {
       setFirstEntry(v);
       setStep("confirm");
       setPin("");
     } else {
       if (v === firstEntry) {
-        onSuccess(storePasscode(v));
+        onSuccess(storePasscode(v, "pin"));
       } else {
         setError("PINs don't match — try again");
         setStep("enter");
@@ -171,13 +157,14 @@ export default function PasscodeModal({
 
   const handleSetPassword = (v) => {
     if (!v || v.length < 6) { setError("Min 6 characters"); return; }
+    setError("");
     if (step === "enter") {
       setFirstEntry(v);
       setStep("confirm");
       setPassword("");
     } else {
       if (v === firstEntry) {
-        onSuccess(storePasscode(v));
+        onSuccess(storePasscode(v, "password"));
       } else {
         setError("Passwords don't match — try again");
         setStep("enter");
@@ -187,8 +174,6 @@ export default function PasscodeModal({
       }
     }
   };
-
-  const isUnlock = mode === "unlock";
 
   return (
     <div className="passcode-overlay">
@@ -231,6 +216,7 @@ export default function PasscodeModal({
             <PinPad
               value={pin}
               onChange={setPin}
+              minLen={4}
               maxLen={6}
               onSubmit={isUnlock ? handleUnlockSubmit : handleSetPin}
             />
@@ -241,6 +227,16 @@ export default function PasscodeModal({
               onSubmit={isUnlock ? handleUnlockSubmit : handleSetPassword}
               placeholder={step === "confirm" ? "Confirm password…" : "Enter password…"}
             />
+          )}
+
+          {/* Escape hatch for locks saved before the type prefix existed */}
+          {isUnlock && (
+            <button
+              onClick={() => { setLocalType(t => (t === "pin" ? "password" : "pin")); setPin(""); setPassword(""); setError(""); }}
+              className="w-full text-[10px] text-zinc-600 hover:text-zinc-400 transition-colors"
+            >
+              {localType === "pin" ? "Use a password instead" : "Use a PIN instead"}
+            </button>
           )}
 
           {/* Error */}

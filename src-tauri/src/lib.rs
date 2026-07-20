@@ -62,8 +62,19 @@ fn write_file(path: String, content: String) -> Result<(), String> {
 }
 
 #[tauri::command]
-fn delete_file(path: String) -> Result<(), String> {
-    fs::remove_file(&path).map_err(|e| e.to_string())
+fn delete_file(app: tauri::AppHandle, path: String) -> Result<(), String> {
+    // Deletion is only ever needed inside the notes directory — refuse anything
+    // else so a compromised webview can't remove arbitrary files.
+    let docs = app.path().document_dir().map_err(|e| e.to_string())?;
+    let notes_dir = docs
+        .join("SignalPad")
+        .canonicalize()
+        .map_err(|e| e.to_string())?;
+    let target = Path::new(&path).canonicalize().map_err(|e| e.to_string())?;
+    if !target.starts_with(&notes_dir) {
+        return Err("delete_file is restricted to the notes directory".into());
+    }
+    fs::remove_file(&target).map_err(|e| e.to_string())
 }
 
 #[tauri::command]

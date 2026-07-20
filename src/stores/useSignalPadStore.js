@@ -142,7 +142,12 @@ function loadCardDensity() { const v = localStorage.getItem("sp-card-density"); 
 function loadAccentColor() { return localStorage.getItem("sp-accent-color") || null; }
 function loadAutoLockMinutes() { const v = Number(localStorage.getItem("sp-auto-lock")); return [5, 15, 30, 60].includes(v) ? v : 0; }
 function loadAutoBackupSchedule() { const v = localStorage.getItem("sp-auto-backup"); return (v === "onclose" || v === "hourly" || v === "daily") ? v : "manual"; }
-function loadNoteCap() { const v = Number(localStorage.getItem("sp-note-cap")); return v > 0 ? v : (v === 0 ? 0 : 10); }
+function loadNoteCap() {
+  const raw = localStorage.getItem("sp-note-cap");
+  if (raw === null) return 10; // never set — default cap, distinct from "0" meaning unlimited
+  const v = Number(raw);
+  return Number.isFinite(v) && v >= 0 ? v : 10;
+}
 function loadDefaultTemplate() { return localStorage.getItem("sp-default-template") || ""; }
 function loadSpellcheckLang() { return localStorage.getItem("sp-spellcheck-lang") || "en-US"; }
 function loadAutoSaveDelay() { const v = Number(localStorage.getItem("sp-autosave-delay")); return [0, 500, 1000, 2000].includes(v) ? v : 1000; }
@@ -186,6 +191,10 @@ export const useSignalPadStore = create((set, get) => ({
   defaultTemplate: loadDefaultTemplate(),
   spellcheckLang: loadSpellcheckLang(),
   autoSaveDelay: loadAutoSaveDelay(),
+  desktopMode: localStorage.getItem("sp-desktop-mode") === "true",
+  pageStyle: (() => { const v = localStorage.getItem("sp-page-style"); return ["sheet", "carved", "stack", "frame"].includes(v) ? v : "sheet"; })(),
+  pageScheme: (() => { const v = localStorage.getItem("sp-page-scheme"); return ["light", "dark", "theme"].includes(v) ? v : "theme"; })(),
+  pageWidth: (() => { const v = localStorage.getItem("sp-page-width"); return ["narrow", "standard", "wide"].includes(v) ? v : "standard"; })(),
   loading: true,
 
   init: async () => {
@@ -204,9 +213,16 @@ export const useSignalPadStore = create((set, get) => ({
         )
       );
 
-      const notes = settled
-        .filter((r) => r.status === "fulfilled" && r.value)
-        .map((r) => r.value)
+      // Dedupe by id (a note file copied in Explorer keeps its frontmatter id) —
+      // keep the most recently updated copy so keys stay unique and writes don't cross.
+      const byId = new Map();
+      for (const r of settled) {
+        if (r.status !== "fulfilled" || !r.value) continue;
+        const n = r.value;
+        const prev = byId.get(n.id);
+        if (!prev || new Date(n.updatedAt) - new Date(prev.updatedAt) >= 0) byId.set(n.id, n);
+      }
+      const notes = [...byId.values()]
         .sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt));
 
       set({ notes, loading: false });
@@ -561,6 +577,10 @@ export const useSignalPadStore = create((set, get) => ({
   setDefaultTemplate: (v) => { localStorage.setItem("sp-default-template", v); set({ defaultTemplate: v }); },
   setSpellcheckLang: (v) => { localStorage.setItem("sp-spellcheck-lang", v); set({ spellcheckLang: v }); },
   setAutoSaveDelay: (v) => { localStorage.setItem("sp-autosave-delay", String(v)); set({ autoSaveDelay: v }); },
+  setDesktopMode: (v) => { localStorage.setItem("sp-desktop-mode", v ? "true" : "false"); set({ desktopMode: v }); },
+  setPageStyle: (v) => { localStorage.setItem("sp-page-style", v); set({ pageStyle: v }); },
+  setPageScheme: (v) => { localStorage.setItem("sp-page-scheme", v); set({ pageScheme: v }); },
+  setPageWidth: (v) => { localStorage.setItem("sp-page-width", v); set({ pageWidth: v }); },
 
   // ── Cloud backup (copy all notes to backup folder) ────────────────────────
   runCloudBackup: async () => {

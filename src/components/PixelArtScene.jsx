@@ -8,10 +8,10 @@ const W = 200, H = 36;
 export const SCENES = [
   { id: "rain-mountains",   label: "Rain in Mountains",  category: "Weather" },
   { id: "thunderstorm",     label: "Thunderstorm",       category: "Weather" },
-  { id: "snow-forest",      label: "Snowy Forest",       category: "Weather" },
   { id: "sunny-beach",      label: "Sunny Beach",        category: "Weather" },
-  { id: "foggy-valley",     label: "Foggy Valley",       category: "Weather" },
-  { id: "cyberpunk-city",   label: "Cyberpunk City",     category: "Scenes"  },
+  { id: "credit-cards",     label: "Falling Credit Cards", category: "Scenes" },
+  { id: "parchment-ink",    label: "Parchment & Ink Pen", category: "Scenes" },
+  { id: "lorem-typing",     label: "Lorem Ipsum Typing", category: "Scenes" },
   { id: "space-nebula",     label: "Space Nebula",       category: "Scenes"  },
   { id: "cozy-cabin",       label: "Cozy Cabin",         category: "Scenes"  },
   { id: "deep-ocean",       label: "Deep Ocean",         category: "Scenes"  },
@@ -126,40 +126,6 @@ function drawThunderstorm(ctx, t) {
   });
 }
 
-// ─── 3. Snow Forest ──────────────────────────────────────────────────────────
-function drawSnowForest(ctx, t) {
-  hGrad(ctx, 0, 0, W, H, "#c0ccd8", "#8898a8");
-  // distant trees silhouette
-  for (let x = 0; x < W; x += 9) {
-    const h2 = 12 + Math.sin(x * 0.4) * 4;
-    rect(ctx, x-1, H-6-h2, 3, h2, "#5a7080");
-    rect(ctx, x-4, H-6-h2+3, 8, h2/2, "#5a7080");
-  }
-  // close trees
-  const trees = seed("snow-forest", "trees", () =>
-    Array.from({ length: 14 }, (_, i) => ({ x: i*15+ri(-3,3), h: ri(14,22) }))
-  );
-  trees.forEach(({ x, h: th }) => {
-    rect(ctx, x-1, H-5-th, 2, th, "#2a3820");
-    for (let i = 0; i < 3; i++) {
-      const lw = 3+(2-i)*4, ly = H-5-th+i*(th/3);
-      rect(ctx, x-lw, ly, lw*2, th/3+1, "#1a4a28");
-      rect(ctx, x-lw+1, ly, lw*2-2, 2, "#d8e8f0");
-    }
-  });
-  // snow ground
-  rect(ctx, 0, H-5, W, 5, "#d0e0ef");
-  rect(ctx, 0, H-6, W, 2, "#e8f0f8");
-  // snowflakes
-  const flakes = seed("snow-forest", "flakes", () =>
-    Array.from({ length: 50 }, () => ({ x: rnd(0,W), y: rnd(0,H), s: rnd(0.3,0.9) }))
-  );
-  ctx.fillStyle = "#ffffff";
-  flakes.forEach(f => {
-    ctx.fillRect(Math.floor(f.x), Math.floor((f.y + t*f.s*0.015)%H), 1, 1);
-  });
-}
-
 // ─── 4. Sunny Beach ──────────────────────────────────────────────────────────
 function drawSunnyBeach(ctx, t) {
   hGrad(ctx, 0, 0, W, H*0.5, "#5bbaf0", "#7aceff");
@@ -182,58 +148,241 @@ function drawSunnyBeach(ctx, t) {
   [[-10,-4],[4,-6],[9,-1],[-5,3]].forEach(([dx,dy]) => rect(ctx,18+dx,Math.floor(H*0.5)+dy,9,2,"#2a8040"));
 }
 
-// ─── 5. Foggy Valley ─────────────────────────────────────────────────────────
-function drawFoggyValley(ctx, t) {
-  hGrad(ctx, 0, 0, W, H, "#b0c0b8", "#90a898");
-  // layered hills
-  [{ y:18, c:"rgba(70,90,80,0.25)" }, { y:22, c:"rgba(60,80,70,0.3)" }, { y:26, c:"rgba(50,70,60,0.35)" }].forEach(({ y, c }) => {
-    ctx.fillStyle = c;
-    for (let x = 0; x < W; x++) {
-      const h2 = Math.sin(x*0.05)*3 + Math.sin(x*0.03+1)*4 + 5;
-      ctx.fillRect(x, Math.floor(y+h2*0.5), 1, Math.floor(h2));
+// ─── 5. Falling Credit Cards ─────────────────────────────────────────────────
+function drawCreditCards(ctx, t) {
+  // dark 16-bit backdrop with subtle vignette
+  hGrad(ctx, 0, 0, W, H, "#0a1428", "#04080f");
+  // distant city blip lights
+  const dots = seed("credit-cards", "dots", () =>
+    Array.from({ length: 22 }, () => ({ x: ri(0, W), y: ri(28, 34), c: ["#1e6a8a", "#244a70"][ri(0, 1)] }))
+  );
+  dots.forEach(d => px(ctx, d.x, d.y, d.c));
+  rect(ctx, 0, 33, W, 3, "#020508");
+
+  // cards rain
+  const cards = seed("credit-cards", "cards", () =>
+    Array.from({ length: 14 }, () => ({
+      x: rnd(0, W),
+      y: rnd(-H, H),
+      s: rnd(0.6, 1.4),
+      rot: ri(0, 1),
+      hue: ri(0, 4),
+    }))
+  );
+  const PAL = [
+    { body: "#c8a23a", stripe: "#8a6a14", chip: "#f0d56a" }, // gold
+    { body: "#2a7aa8", stripe: "#0e3a5a", chip: "#7fcfff" }, // blue
+    { body: "#3a3a3a", stripe: "#0a0a0a", chip: "#b8b8b8" }, // black
+    { body: "#a83838", stripe: "#5a1414", chip: "#ffb4a8" }, // red
+    { body: "#3c8a4a", stripe: "#163e1e", chip: "#a8e8b0" }, // green
+  ];
+
+  cards.forEach((c, i) => {
+    const span = H + 18;
+    const y = ((c.y + t * c.s * 0.04) % span + span) % span - 14;
+    const wob = Math.sin(t * 0.003 + i) * 1.2;
+    const cx = Math.floor(c.x + wob);
+    const cy = Math.floor(y);
+    const col = PAL[c.hue];
+    if (c.rot) {
+      // face-on card: 14 wide × 9 tall
+      rect(ctx, cx, cy, 14, 9, col.body);
+      rect(ctx, cx, cy + 1, 14, 1, "rgba(255,255,255,0.18)"); // top sheen
+      rect(ctx, cx, cy + 2, 14, 2, col.stripe);                // magstripe
+      rect(ctx, cx + 2, cy + 5, 3, 2, col.chip);               // chip
+      // tiny embossed numbers
+      px(ctx, cx + 7, cy + 6, "rgba(255,255,255,0.6)");
+      px(ctx, cx + 9, cy + 6, "rgba(255,255,255,0.6)");
+      px(ctx, cx + 11, cy + 6, "rgba(255,255,255,0.6)");
+    } else {
+      // edge-on (rotating illusion): narrow stripe
+      rect(ctx, cx + 4, cy + 1, 6, 7, col.body);
+      rect(ctx, cx + 4, cy + 2, 6, 1, "rgba(255,255,255,0.3)");
+      rect(ctx, cx + 4, cy + 3, 6, 1, col.stripe);
     }
   });
-  // rolling fog bands
-  [0.18, 0.28, 0.35].forEach((a, i) => {
-    const fogY = 14 + i*5 + Math.sin(t*0.001+i)*2;
-    for (let y2 = 0; y2 < 8; y2++) {
-      const fa = a * (1 - y2/8);
-      ctx.fillStyle = `rgba(190,205,198,${fa.toFixed(2)})`;
-      ctx.fillRect(0, Math.floor(fogY+y2), W, 1);
-    }
-  });
-  rect(ctx, 0, H-5, W, 5, "#7a9080");
+
+  // foreground larger card to add depth
+  const bigY = ((t * 0.06) % (H + 30)) - 14;
+  const bx = 80 + Math.floor(Math.sin(t * 0.002) * 12);
+  const by = Math.floor(bigY);
+  rect(ctx, bx, by, 22, 14, "#c8a23a");
+  rect(ctx, bx, by + 1, 22, 1, "rgba(255,255,255,0.25)");
+  rect(ctx, bx, by + 3, 22, 3, "#8a6a14");
+  rect(ctx, bx + 3, by + 8, 5, 3, "#f0d56a");
+  for (let i = 0; i < 4; i++) px(ctx, bx + 10 + i * 3, by + 9, "rgba(255,255,255,0.7)");
 }
 
-// ─── 6. Cyberpunk City ───────────────────────────────────────────────────────
-function drawCyberpunkCity(ctx, t) {
-  rect(ctx, 0, 0, W, H, "#04020a");
-  // buildings silhouette
-  const blds = seed("cyberpunk-city", "blds", () =>
-    Array.from({ length: 22 }, (_, i) => ({ x: i*10-2+ri(-2,2), w: ri(7,13), h: ri(12,30) }))
-  );
-  blds.forEach(b => {
-    rect(ctx, b.x, H-4-b.h, b.w, b.h, "#0a0618");
-    // windows
-    for (let wy = H-4-b.h+2; wy < H-5; wy+=3) {
-      for (let wx = b.x+1; wx < b.x+b.w-1; wx+=3) {
-        if (Math.sin(t*0.001+wx*0.4+wy*0.3)>0.2) {
-          const cols = ["#ff1a3a","#00ffcc","#ff9900","#aa00ff","#00aaff"];
-          px(ctx, wx, wy, cols[ri(0,4)]);
-        }
+// ─── 6. Parchment & Ink Pen ──────────────────────────────────────────────────
+function drawParchmentInk(ctx, t) {
+  // desk
+  hGrad(ctx, 0, 0, W, H, "#3a261a", "#1f140a");
+  // wood grain
+  for (let y = 0; y < H; y += 3) {
+    ctx.fillStyle = `rgba(15,8,4,${(0.18 + Math.sin(y * 0.6) * 0.06).toFixed(2)})`;
+    ctx.fillRect(0, y, W, 1);
+  }
+
+  // parchment paper
+  const px0 = 28, py0 = 5, pw = 144, ph = 26;
+  // shadow under paper
+  rect(ctx, px0 + 2, py0 + ph - 1, pw, 2, "rgba(0,0,0,0.45)");
+  // paper base
+  rect(ctx, px0, py0, pw, ph, "#f4e8c8");
+  // slight aged tint top/bottom
+  rect(ctx, px0, py0, pw, 2, "#e8d8a8");
+  rect(ctx, px0, py0 + ph - 2, pw, 2, "#dcc890");
+  // torn/feathered edges
+  for (let i = 0; i < pw; i += 2) px(ctx, px0 + i, py0, "#c8b478");
+  for (let i = 0; i < pw; i += 2) px(ctx, px0 + i, py0 + ph - 1, "#b89f5e");
+
+  // existing lines of ink text (already written)
+  const linesDrawn = Math.min(5, Math.floor(t / 1500));
+  const lineYs = [py0 + 4, py0 + 8, py0 + 12, py0 + 16, py0 + 20];
+  const lineLens = [120, 110, 130, 95, 70];
+  for (let i = 0; i < linesDrawn; i++) {
+    rect(ctx, px0 + 4, lineYs[i], lineLens[i], 1, "#2a1808");
+    // ink dot variations
+    for (let k = 0; k < lineLens[i]; k += 6) {
+      px(ctx, px0 + 4 + k, lineYs[i] - 1, "rgba(42,24,8,0.7)");
+    }
+  }
+
+  // currently being written line
+  const cycle = 5000;
+  const phase = (t % cycle) / cycle;
+  const curLine = linesDrawn % 5;
+  const curLen = Math.floor(lineLens[curLine] * Math.min(1, phase * 1.2));
+  rect(ctx, px0 + 4, lineYs[curLine], curLen, 1, "#2a1808");
+
+  // ink pen — diagonal, nib at the writing tip
+  const tipX = px0 + 4 + curLen;
+  const tipY = lineYs[curLine];
+  // shaft (going up-right, dark wood)
+  for (let i = 0; i < 14; i++) {
+    px(ctx, tipX + i, tipY - 2 - i, "#1a0a04");
+    px(ctx, tipX + i, tipY - 3 - i, "#2a1408");
+    px(ctx, tipX + i, tipY - 1 - i, "#3a200c");
+  }
+  // metal nib holder
+  rect(ctx, tipX - 1, tipY - 1, 2, 2, "#9a9a9a");
+  // nib tip
+  px(ctx, tipX, tipY, "#2a1808");
+  // feather plume — soft, layered
+  for (let i = 0; i < 12; i++) {
+    const fx = tipX + 13 + i;
+    const fy = tipY - 15 - i;
+    const sw = Math.max(1, 6 - Math.floor(i / 2));
+    for (let s = -sw; s <= sw; s++) {
+      const a = 0.7 - Math.abs(s) * 0.08 - i * 0.04;
+      if (a > 0.05) {
+        ctx.fillStyle = `rgba(220,210,180,${a.toFixed(2)})`;
+        ctx.fillRect(fx + s, fy, 1, 1);
       }
     }
-  });
-  // ground glow
-  rect(ctx, 0, H-4, W, 4, "#07030d");
-  rect(ctx, 0, H-4, W, 1, "#1a0030");
-  // moving car/speeder
-  const carX = (t*0.05)%(W+20)-10;
-  rect(ctx, Math.floor(carX), H-6, 10, 2, "#ff1a3a");
-  px(ctx, Math.floor(carX)-2, H-5, "#ff6644");
-  px(ctx, Math.floor(carX)+11, H-5, "#00ffcc");
-  // neon sign blink
-  if (Math.sin(t*0.003)>0) rect(ctx, 40, 4, 20, 4, "rgba(0,255,200,0.3)");
+  }
+  // feather spine
+  for (let i = 0; i < 12; i++) px(ctx, tipX + 13 + i, tipY - 15 - i, "#a89a70");
+
+  // ink droplet occasionally
+  if (Math.sin(t * 0.004) > 0.85) {
+    px(ctx, tipX, tipY + 1, "#1a0e02");
+  }
+
+  // ink well in corner
+  rect(ctx, 6, H - 10, 9, 7, "#1a0a04");
+  rect(ctx, 7, H - 11, 7, 2, "#0a0402");
+  rect(ctx, 8, H - 10, 5, 2, "#000000");
+}
+
+// ─── 7. Lorem Ipsum Typing ───────────────────────────────────────────────────
+function drawLoremTyping(ctx, t) {
+  // monitor / window chrome
+  rect(ctx, 0, 0, W, H, "#0e1018");
+  // app window
+  const wx = 14, wy = 3, ww = W - 28, wh = H - 6;
+  rect(ctx, wx, wy, ww, wh, "#1a1d28");
+  // title bar
+  rect(ctx, wx, wy, ww, 3, "#262b3a");
+  px(ctx, wx + 2, wy + 1, "#ff5555");
+  px(ctx, wx + 5, wy + 1, "#ffbb33");
+  px(ctx, wx + 8, wy + 1, "#55cc55");
+  // editor area
+  const ex = wx + 2, ey = wy + 4, ew = ww - 4, eh = wh - 6;
+  rect(ctx, ex, ey, ew, eh, "#0f1119");
+
+  // gutter line numbers
+  rect(ctx, ex, ey, 6, eh, "#181b25");
+  for (let i = 0; i < 6; i++) {
+    px(ctx, ex + 2, ey + 2 + i * 4, "rgba(140,160,200,0.5)");
+    px(ctx, ex + 4, ey + 2 + i * 4, "rgba(140,160,200,0.5)");
+  }
+
+  // simulated lorem text — typing animation
+  const LOREM_LINES = [
+    "Lorem ipsum dolor sit amet,",
+    "consectetur adipiscing elit.",
+    "Sed do eiusmod tempor",
+    "incididunt ut labore et",
+    "dolore magna aliqua. Ut enim",
+    "ad minim veniam, quis nostrud",
+  ];
+  const TYPE_MS_PER_CHAR = 80;
+  const TOTAL_CHARS = LOREM_LINES.reduce((s, l) => s + l.length, 0);
+  const CYCLE = TOTAL_CHARS * TYPE_MS_PER_CHAR + 2500;
+  const phase = t % CYCLE;
+  const typedChars = Math.min(TOTAL_CHARS, Math.floor(phase / TYPE_MS_PER_CHAR));
+
+  let charBudget = typedChars;
+  let curRow = -1, curCol = 0;
+  const lineY0 = ey + 2;
+  for (let i = 0; i < LOREM_LINES.length; i++) {
+    const line = LOREM_LINES[i];
+    const show = Math.min(line.length, charBudget);
+    if (show <= 0) break;
+    const y = lineY0 + i * 4;
+    if (y > ey + eh - 2) break;
+    // draw chars as 1×1 pixels with word-color variation
+    let x = ex + 8;
+    let inWord = false;
+    let wordStart = x;
+    for (let c = 0; c < show; c++) {
+      const ch = line[c];
+      const isSpace = ch === " " || ch === ",";
+      if (isSpace) {
+        if (inWord) {
+          // commit word as a tinted rect for readability
+          const wlen = x - wordStart;
+          const hue = ["#a8b8d8", "#7fb4d4", "#c8a8e0", "#a8d8c0"][(i + c) % 4];
+          rect(ctx, wordStart, y, wlen, 2, hue);
+          inWord = false;
+        }
+        x += 2;
+        if (ch === ",") {
+          px(ctx, x, y + 1, "#e8a060");
+          x += 1;
+        }
+      } else {
+        if (!inWord) { wordStart = x; inWord = true; }
+        x += 1;
+      }
+      if (c === show - 1) {
+        if (inWord) {
+          const wlen = x - wordStart;
+          const hue = ["#a8b8d8", "#7fb4d4", "#c8a8e0", "#a8d8c0"][(i + c) % 4];
+          rect(ctx, wordStart, y, wlen, 2, hue);
+        }
+        curRow = i;
+        curCol = x;
+      }
+    }
+    charBudget -= line.length;
+  }
+
+  // blinking caret at end of typed text
+  if (curRow >= 0 && Math.floor(t / 500) % 2 === 0) {
+    rect(ctx, curCol + 1, lineY0 + curRow * 4, 1, 3, "#ffffff");
+  }
 }
 
 // ─── 7. Space Nebula ─────────────────────────────────────────────────────────
@@ -661,10 +810,10 @@ function drawArcadeRoom(ctx, t) {
 const SCENE_FNS = {
   "rain-mountains":   drawRainMountains,
   "thunderstorm":     drawThunderstorm,
-  "snow-forest":      drawSnowForest,
   "sunny-beach":      drawSunnyBeach,
-  "foggy-valley":     drawFoggyValley,
-  "cyberpunk-city":   drawCyberpunkCity,
+  "credit-cards":     drawCreditCards,
+  "parchment-ink":    drawParchmentInk,
+  "lorem-typing":     drawLoremTyping,
   "space-nebula":     drawSpaceNebula,
   "cozy-cabin":       drawCozyCabin,
   "deep-ocean":       drawDeepOcean,
@@ -694,11 +843,12 @@ function drawDocSnapshot(ctx, noteContent) {
   const text = (div.textContent || "").slice(0, 300);
   const words = text.split(/\s+/).filter(Boolean);
   let x = 6, y = 15, lineH = 4;
-  words.forEach(word => {
+  words.forEach((word, i) => {
     const wl = Math.min(word.length * 2, W - 14);
     if (x + wl > W - 8) { x = 6; y += lineH + 2; }
     if (y > H - 5) return;
-    ctx.fillStyle = `rgba(160,170,200,${(0.15 + Math.random() * 0.12).toFixed(2)})`;
+    // deterministic per-word alpha — random here re-rolls every frame and shimmers
+    ctx.fillStyle = `rgba(160,170,200,${(0.15 + ((i * 37) % 12) / 100).toFixed(2)})`;
     ctx.fillRect(x, y, wl, 2);
     x += wl + 3;
   });
@@ -720,11 +870,16 @@ export function SceneCanvas({ sceneId, noteContent }) {
     const ctx = canvas.getContext("2d");
     ctx.imageSmoothingEnabled = false;
 
-    function frame() {
-      const t = performance.now() - t0.current;
-      ctx.clearRect(0, 0, W, H);
-      if (sceneId && SCENE_FNS[sceneId]) SCENE_FNS[sceneId](ctx, t);
-      else drawDocSnapshot(ctx, noteContent);
+    let lastDraw = 0;
+    function frame(now) {
+      // ~30fps is plenty for 200×36 pixel art and halves list-view CPU
+      if (now - lastDraw >= 33) {
+        lastDraw = now;
+        const t = now - t0.current;
+        ctx.clearRect(0, 0, W, H);
+        if (sceneId && SCENE_FNS[sceneId]) SCENE_FNS[sceneId](ctx, t);
+        else drawDocSnapshot(ctx, noteContent);
+      }
       rafRef.current = requestAnimationFrame(frame);
     }
     rafRef.current = requestAnimationFrame(frame);

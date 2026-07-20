@@ -1,6 +1,6 @@
 {
   "productName": "SignalPad",
-  "version": "0.1.4",
+  "version": "1.0.1",
   "identifier": "com.arcollective.signalpad",
   "build": {
     "beforeDevCommand": "npm run dev",
@@ -10,13 +10,29 @@
   },
   "bundle": {
     "active": true,
-    "targets": "all",
+    "targets": [
+      "nsis"
+    ],
+    "publisher": "AR Collective",
+    "copyright": "© 2026 AR Collective",
+    "shortDescription": "A minimal, focused note-taking app.",
+    "longDescription": "SignalPad is a minimal, focused note-taking app — rich-text editing, snapshots and version history, themes, per-note locks, and a desktop word-processor mode.",
+    "category": "Productivity",
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
       "icons/128x128@2x.png",
       "icons/icon.ico"
-    ]
+    ],
+    "windows": {
+      "nsis": {
+        "installMode": "currentUser",
+        "languages": [
+          "English"
+        ],
+        "displayLanguageSelector": false
+      }
+    }
   },
   "app": {
     "windows": [
@@ -35,7 +51,7 @@
       }
     ],
     "security": {
-      "csp": null
+      "csp": "default-src 'self' ipc: http://ipc.localhost; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' data: https://fonts.gstatic.com; img-src 'self' data: blob:; connect-src 'self' ipc: http://ipc.localhost"
     }
   }
 }
