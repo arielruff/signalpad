@@ -1,9 +1,16 @@
 {
   "history": [
     {
-      "version": "1.0.1",
+      "version": "1.1.1",
       "date": "2026-07-20",
       "changes": []
+    },
+    {
+      "version": "1.0.1",
+      "date": "2026-07-20",
+      "changes": [
+        "Release v1.0.0 — stability pass, Desktop (Big View) mode, Windows installer"
+      ]
     },
     {
       "version": "1.0.0",

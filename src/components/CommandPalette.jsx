@@ -92,7 +92,8 @@ export default function CommandPalette({ notes, onClose, onNavigate, onNew, onDe
               {item.icon && <span className="text-zinc-500 shrink-0">{item.icon}</span>}
               <span className="flex-1 text-[12px] truncate">{item.label}</span>
               {item.sub && (
-                <span className="text-[9px] text-amber-500/70 border border-amber-500/25 rounded px-1 py-0.5 shrink-0">
+                <span className="text-[9px] border rounded px-1 py-0.5 shrink-0"
+                  style={{ color: "var(--pinned-fg)", borderColor: "var(--pinned-border)" }}>
                   {item.sub}
                 </span>
               )}
@@ -102,7 +103,7 @@ export default function CommandPalette({ notes, onClose, onNavigate, onNew, onDe
                     role="button"
                     aria-label={item.note.pinned ? "Unpin" : "Pin"}
                     onMouseDown={(e) => { e.stopPropagation(); onTogglePin(item.note.id); onClose(); }}
-                    className="p-1 rounded hover:bg-zinc-700/60 text-zinc-600 hover:text-amber-400 cursor-pointer"
+                    className="p-1 rounded hover:bg-zinc-700/60 text-zinc-600 hover:text-[var(--pinned-fg)] cursor-pointer"
                     title={item.note.pinned ? "Unpin" : "Pin"}
                   >
                     {item.note.pinned ? <PinOff size={10} /> : <Pin size={10} />}

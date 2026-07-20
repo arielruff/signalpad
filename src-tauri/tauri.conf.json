@@ -1,6 +1,6 @@
 {
   "productName": "SignalPad",
-  "version": "1.0.1",
+  "version": "1.1.1",
   "identifier": "com.arcollective.signalpad",
   "build": {
     "beforeDevCommand": "npm run dev",

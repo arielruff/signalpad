@@ -34,13 +34,12 @@ export default function ActivityHeatmap({ notes }) {
 
   const max = Math.max(...buckets, 1);
 
-  const getColor = (count) => {
-    if (count === 0) return "bg-zinc-800/60";
+  // Accent-derived ramp so all three app themes follow automatically
+  const getStyle = (count) => {
+    if (count === 0) return { backgroundColor: "color-mix(in srgb, var(--text-faint) 22%, transparent)" };
     const intensity = count / max;
-    if (intensity < 0.25) return "bg-cyan-900/70";
-    if (intensity < 0.5)  return "bg-cyan-700/70";
-    if (intensity < 0.75) return "bg-cyan-500/80";
-    return "bg-cyan-400";
+    const pct = intensity < 0.25 ? 30 : intensity < 0.5 ? 55 : intensity < 0.75 ? 80 : 100;
+    return { backgroundColor: `color-mix(in srgb, var(--accent) ${pct}%, transparent)` };
   };
 
   // Build column-major grid (7 rows = days of week, N cols = weeks)
@@ -64,7 +63,8 @@ export default function ActivityHeatmap({ notes }) {
               <div
                 key={di}
                 title={count === 0 ? "No activity" : `${count} note update${count !== 1 ? "s" : ""}`}
-                className={`w-[8px] h-[8px] rounded-[2px] transition-colors ${getColor(count)}`}
+                className="w-[8px] h-[8px] rounded-[2px] transition-colors"
+                style={getStyle(count)}
               />
             ))}
           </div>

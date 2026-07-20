@@ -1524,7 +1524,7 @@ function NoteEditor({ note, onBack, onSave, onDelete, onTogglePin, mdPreview, on
       key={m.id}
       onClick={m.off}
       title={`${m.label} mode is on — click to turn off`}
-      className="group flex items-center gap-1 px-2 py-0.5 rounded-full border border-amber-500/40 bg-amber-500/10 text-amber-300 hover:bg-amber-500/20 hover:text-amber-100 text-[9px] font-bold uppercase tracking-wider transition-colors shadow-lg backdrop-blur-sm"
+      className="sp-mode-chip group flex items-center gap-1 px-2 py-0.5 rounded-full border border-amber-500/40 bg-amber-500/10 text-amber-300 hover:bg-amber-500/20 hover:text-amber-100 text-[9px] font-bold uppercase tracking-wider transition-colors shadow-lg backdrop-blur-sm"
     >
       <span>{m.label}</span>
       <X size={9} className="opacity-70 group-hover:opacity-100" />
@@ -1544,9 +1544,7 @@ function NoteEditor({ note, onBack, onSave, onDelete, onTogglePin, mdPreview, on
       {toast && (
         <div
           className={`absolute top-2 left-1/2 -translate-x-1/2 z-[60] px-3 py-1.5 rounded text-[10px] font-semibold tracking-wide shadow-2xl pointer-events-none
-            ${toast.kind === "success" ? "bg-emerald-900/95 text-emerald-100 border border-emerald-700"
-              : toast.kind === "error"   ? "bg-red-900/95 text-red-100 border border-red-700"
-              : "bg-zinc-800/95 text-zinc-100 border border-zinc-700"}`}>
+            ${toast.kind === "success" ? "sp-toast-success" : toast.kind === "error" ? "sp-toast-error" : "sp-toast-info"}`}>
           {toast.msg}
         </div>
       )}
@@ -2062,7 +2060,7 @@ function SettingsView({ onClose }) {
           <button key={id} onClick={() => setTab(id)}
             className={`flex items-center gap-1.5 px-3 py-1.5 rounded-t text-[10px] font-semibold tracking-wide transition-colors
               ${tab === id
-                ? "bg-zinc-900 border border-b-zinc-900 border-zinc-800 text-zinc-100 -mb-px pb-[7px]"
+                ? "bg-zinc-950 border border-b-zinc-950 border-zinc-800 text-zinc-100 -mb-px pb-[7px]"
                 : "text-zinc-600 hover:text-zinc-400"}`}>
             {icon}{label}
           </button>
@@ -2208,7 +2206,7 @@ function SettingsView({ onClose }) {
               <div className="flex items-center justify-between">
                 <span className="text-[11px] text-zinc-300">Show pixel art panels</span>
                 <button onClick={() => setCardScenesEnabled(!cardScenesEnabled)}
-                  className={`w-9 h-5 rounded-full transition-colors relative ${cardScenesEnabled ? "bg-zinc-600" : "bg-zinc-700"}`}>
+                  className={`w-9 h-5 rounded-full transition-colors relative ${cardScenesEnabled ? "sp-toggle-on" : "bg-zinc-700"}`}>
                   <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-all ${cardScenesEnabled ? "left-[18px]" : "left-0.5"}`} />
                 </button>
               </div>
@@ -2229,7 +2227,7 @@ function SettingsView({ onClose }) {
           <section>
             <p className="section-label mb-2">Accent Color</p>
             <div className="flex items-center gap-3">
-              <input type="color" value={accentColor || "#22d3ee"}
+              <input type="color" value={accentColor || "#f75454"}
                 onChange={e => setAccentColor(e.target.value)}
                 className="w-8 h-8 rounded border border-zinc-700 bg-zinc-900 cursor-pointer p-0.5" />
               <span className="text-[11px] text-zinc-400 font-mono flex-1">{accentColor || "theme default"}</span>
@@ -2248,7 +2246,7 @@ function SettingsView({ onClose }) {
             <div className="flex items-center justify-between mb-3">
               <span className="text-[11px] text-zinc-300">Enable spellcheck</span>
               <button onClick={() => setSpellcheck(!spellcheck)}
-                className={`w-9 h-5 rounded-full transition-colors relative ${spellcheck ? "bg-zinc-600" : "bg-zinc-700"}`}>
+                className={`w-9 h-5 rounded-full transition-colors relative ${spellcheck ? "sp-toggle-on" : "bg-zinc-700"}`}>
                 <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-all ${spellcheck ? "left-[18px]" : "left-0.5"}`} />
               </button>
             </div>

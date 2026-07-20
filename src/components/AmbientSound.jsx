@@ -125,7 +125,7 @@ export default function AmbientSound() {
         onClick={() => setOpen((o) => !o)}
         title="Ambient sound"
         className={`w-7 h-7 flex items-center justify-center rounded transition-colors ${
-          active ? "text-cyan-400 bg-cyan-500/15" : "text-zinc-600 hover:text-zinc-300 hover:bg-zinc-700"
+          active ? "text-[var(--accent)] bg-[var(--accent-bg)]" : "text-zinc-600 hover:text-zinc-300 hover:bg-zinc-700"
         }`}
       >
         {active ? <Volume2 size={14} /> : <VolumeX size={14} />}
@@ -160,7 +160,7 @@ export default function AmbientSound() {
               step="0.05"
               value={volume}
               onChange={(e) => setVolume(parseFloat(e.target.value))}
-              className="w-full h-1 accent-cyan-400"
+              className="w-full h-1 accent-[var(--accent)]"
             />
           </div>
         </div>

@@ -16,7 +16,7 @@ npm run build          # Vite build only
 1. Add a new entry at the TOP of `src/changelog.json` — `history[0].version` is what the UI displays.
 2. `npm run version:set -- <x.y.z>` — syncs package.json, tauri.conf.json, and Cargo.toml, and
    verifies the changelog entry matches. Never bump versions by hand in one file only.
-3. `npm run tauri build` — produces the installer at
+3. `npm run release` (alias for `npm run tauri build`) — produces the installer at
    `src-tauri/target/release/bundle/nsis/SignalPad_<x.y.z>_x64-setup.exe`
    (plus the portable exe at `src-tauri/target/release/signalpad.exe`).
 4. The installer is unsigned — Windows SmartScreen will warn on first run. Code-signing

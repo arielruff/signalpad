@@ -54,7 +54,7 @@ body,
   --border-base: #3f3f46;
   --border-subtle: #27272a;
   --accent: #f75454;
-  --accent-bg: rgba(34, 211, 238, 0.1);
+  --accent-bg: rgba(247, 84, 84, 0.1);
   --scrollbar: #3f3f46;
   --card-bg: rgba(24, 24, 27, 0.4);
   /* Pinned note accent — change these four to retheme pinned cards */
@@ -79,7 +79,7 @@ body,
   --border-base: #d6d0c8;
   --border-subtle: #e2ddd6;
   --accent: #eb4c4c;
-  --accent-bg: #962f2f;
+  --accent-bg: rgba(235, 76, 76, 0.12);
   --scrollbar: #ccc7be;
   --card-bg: rgba(185, 185, 185, 0.856);
   /* Pinned accent overrides for Light theme */
@@ -122,7 +122,7 @@ body,
 /* ── Per-theme button overrides ─────────────────────────────────────────── */
 
 /* Dark (default — matches :root vars, listed here for reference/editing)   */
-/* .btn-primary  → cyan tinted   .btn-secondary → zinc-800                 */
+/* .btn-primary  → accent tinted   .btn-secondary → zinc-800               */
 
 /* Light — solid filled buttons, warm border secondary */
 [data-theme="light"] .btn-primary {
@@ -173,10 +173,8 @@ body,
   color: #1c1917;
 }
 
-[data-theme="light"] .btn-icon.active {
-  background: rgba(8, 145, 178, 0.12);
-  color: #0891b2;
-}
+/* .btn-icon.active inherits the accent tokens — no light override needed
+   now that --accent-bg is a proper translucent tint. */
 
 /* Signal — white/glass buttons on red background */
 [data-theme="red"] .btn-primary {
@@ -464,11 +462,11 @@ body {
   /* App brand color */
   --brand-fg: var(--accent);
 
-  /* Context menu spell suggestions */
-  --suggestion-fg: #e63939;
-  --suggestion-fg-hover: #a5f3fc;
-  --suggestion-arrow: #22d3ee;
-  --suggestion-hover-bg: rgba(8, 145, 178, 0.10);
+  /* Context menu spell suggestions — keyed to the accent so all themes follow */
+  --suggestion-fg: var(--accent);
+  --suggestion-fg-hover: var(--accent);
+  --suggestion-arrow: var(--accent);
+  --suggestion-hover-bg: var(--accent-bg);
 }
 
 /* ── Button base ─────────────────────────────────────────────────────────── */
@@ -904,6 +902,12 @@ body {
   --page-strong: #1d1a16;
   --sheet-1: #f0e8d8;
   --sheet-2: #e2d8c2;
+  /* page-scoped furniture — must stay readable whatever the app theme
+     (the Signal theme's accent is white, invisible on this page) */
+  --page-accent: #d92c2c;
+  --page-border: #ddd4c4;
+  --page-surface: #f1ecdf;
+  --page-faint: #b0a695;
 }
 
 .sp-scheme-dark {
@@ -912,6 +916,10 @@ body {
   --page-strong: #e8e8ec;
   --sheet-1: #20202a;
   --sheet-2: #2a2a36;
+  --page-accent: #f75454;
+  --page-border: #2c2c33;
+  --page-surface: #1d1d24;
+  --page-faint: #56565f;
 }
 
 .sp-scheme-theme {
@@ -920,6 +928,10 @@ body {
   --page-strong: var(--text-primary);
   --sheet-1: color-mix(in srgb, var(--bg-950) 74%, #808080);
   --sheet-2: color-mix(in srgb, var(--bg-950) 55%, #808080);
+  --page-accent: var(--accent);
+  --page-border: var(--border-base);
+  --page-surface: var(--bg-800);
+  --page-faint: var(--text-faint);
 }
 
 .sp-well .signalpad-content.sp-page {
@@ -1058,6 +1070,43 @@ body {
   pointer-events: none;
 }
 
+/* ── Page-scoped colors inside wells ─────────────────────────────────────────
+   Accents and furniture on the page follow the page scheme, not the app theme,
+   so nothing goes invisible when the two differ. */
+.sp-well .smooth-caret { background: var(--page-accent); }
+.sp-well .sp-ck { border-color: var(--page-accent); }
+.sp-well .sp-doclabel { color: var(--page-accent); }
+
+.sp-well .sp-page .wiki-link {
+  color: var(--page-accent);
+  border-bottom-color: color-mix(in srgb, var(--page-accent) 50%, transparent);
+}
+
+.sp-well .sp-page input[type="checkbox"] { accent-color: var(--page-accent); }
+.sp-well .sp-page code { color: var(--page-accent); }
+.sp-well .sp-page hr { border-top-color: var(--page-border); }
+.sp-well .sp-page:empty::before { color: var(--page-faint); }
+.sp-well .sp-page .empty { color: var(--page-faint); }
+
+.sp-well .sp-page .sp-table th,
+.sp-well .sp-page .sp-table td { border-color: var(--page-border); }
+
+.sp-well .sp-page .sp-table th {
+  background: var(--page-surface);
+  color: var(--page-fg);
+}
+
+.sp-well .sp-page .sp-table tr:nth-child(even) td { background: var(--page-surface); }
+.sp-well .sp-page .sp-table td:focus { outline-color: var(--page-accent); }
+
+.sp-well .typewriter-overlay {
+  background: linear-gradient(to bottom,
+      var(--page-bg) 0%,
+      transparent 28%,
+      transparent 72%,
+      var(--page-bg) 100%);
+}
+
 /* ── Markdown preview ── */
 .md-preview h1 {
   font-size: 17px;
@@ -1073,7 +1122,7 @@ body {
   background: var(--bg-800);
   padding: 1px 5px;
   border-radius: 3px;
-  color: #a5f3fc;
+  color: var(--accent);
 }
 
 .md-preview pre {
@@ -1262,3 +1311,113 @@ body {
   font-weight: 700;
   flex-shrink: 0;
 }
+
+/* ── Settings toggles — accent when ON ──────────────────────────────────── */
+.sp-toggle-on {
+  background-color: var(--accent);
+}
+
+[data-theme="red"] .sp-toggle-on {
+  background-color: rgba(255, 255, 255, 0.4);
+}
+
+/* ── Active-mode chips (amber) — legible on parchment ───────────────────── */
+[data-theme="light"] .sp-mode-chip {
+  color: #92400e;
+  background-color: rgba(217, 119, 6, 0.12);
+  border-color: rgba(180, 83, 9, 0.5);
+}
+
+[data-theme="light"] .sp-mode-chip:hover {
+  color: #78350f;
+  background-color: rgba(217, 119, 6, 0.2);
+}
+
+/* ── Toasts — themed instead of always-dark ─────────────────────────────── */
+.sp-toast-success {
+  background: rgba(6, 78, 59, 0.95);
+  color: #d1fae5;
+  border: 1px solid #047857;
+}
+
+.sp-toast-error {
+  background: rgba(127, 29, 29, 0.95);
+  color: #fee2e2;
+  border: 1px solid #b91c1c;
+}
+
+.sp-toast-info {
+  background: var(--bg-800);
+  color: var(--text-primary);
+  border: 1px solid var(--border-base);
+}
+
+[data-theme="light"] .sp-toast-success {
+  background: #e9f7ee;
+  color: #14532d;
+  border-color: #8fd3a8;
+}
+
+[data-theme="light"] .sp-toast-error {
+  background: #fdeeee;
+  color: #7f1d1d;
+  border-color: #f2adad;
+}
+
+/* ── Translucent zinc variants missed by the theme remaps ───────────────────
+   Light theme */
+[data-theme="light"] .bg-zinc-500\/20 { background-color: rgba(87, 83, 78, 0.16); }
+[data-theme="light"] .bg-zinc-500\/10 { background-color: rgba(87, 83, 78, 0.1); }
+[data-theme="light"] .hover\:bg-zinc-500\/10:hover { background-color: rgba(87, 83, 78, 0.1); }
+[data-theme="light"] .bg-zinc-900\/30 { background-color: rgba(237, 232, 225, 0.45); }
+[data-theme="light"] .bg-zinc-900\/50 { background-color: rgba(237, 232, 225, 0.6); }
+[data-theme="light"] .bg-zinc-900\/80 { background-color: rgba(237, 232, 225, 0.85); }
+[data-theme="light"] .bg-zinc-800\/80 { background-color: rgba(226, 221, 214, 0.85); }
+[data-theme="light"] .bg-zinc-800\/95 { background-color: rgba(226, 221, 214, 0.95); }
+[data-theme="light"] .hover\:bg-zinc-800\/40:hover { background-color: rgba(226, 221, 214, 0.5); }
+[data-theme="light"] .hover\:bg-zinc-800\/50:hover { background-color: rgba(226, 221, 214, 0.6); }
+[data-theme="light"] .hover\:bg-zinc-800\/60:hover { background-color: rgba(226, 221, 214, 0.7); }
+[data-theme="light"] .hover\:bg-zinc-900:hover { background-color: #ede8e1; }
+[data-theme="light"] .hover\:bg-zinc-900\/60:hover { background-color: rgba(237, 232, 225, 0.7); }
+[data-theme="light"] .hover\:bg-zinc-700\/60:hover { background-color: rgba(204, 199, 190, 0.6); }
+[data-theme="light"] .border-b-zinc-900 { border-bottom-color: #ede8e1; }
+[data-theme="light"] .border-b-zinc-950 { border-bottom-color: #f5f1ec; }
+[data-theme="light"] .border-zinc-500 { border-color: #a8a29e; }
+[data-theme="light"] .border-zinc-500\/80 { border-color: rgba(120, 113, 108, 0.6); }
+[data-theme="light"] .border-zinc-500\/20 { border-color: rgba(120, 113, 108, 0.25); }
+[data-theme="light"] .border-zinc-700\/60 { border-color: rgba(214, 208, 200, 0.8); }
+[data-theme="light"] .border-zinc-700\/30 { border-color: rgba(214, 208, 200, 0.5); }
+[data-theme="light"] .border-zinc-800\/80 { border-color: rgba(226, 221, 214, 0.9); }
+/* Timeline dots: "selected" flips to dark on parchment */
+[data-theme="light"] .bg-zinc-300 { background-color: #44403c; }
+[data-theme="light"] .bg-zinc-400 { background-color: #57534e; }
+[data-theme="light"] .border-zinc-300 { border-color: #44403c; }
+[data-theme="light"] .border-zinc-400 { border-color: #57534e; }
+
+/* Signal (red) theme */
+[data-theme="red"] .bg-zinc-500\/20 { background-color: rgba(255, 255, 255, 0.16); }
+[data-theme="red"] .bg-zinc-500\/10 { background-color: rgba(255, 255, 255, 0.1); }
+[data-theme="red"] .hover\:bg-zinc-500\/10:hover { background-color: rgba(255, 255, 255, 0.1); }
+[data-theme="red"] .bg-zinc-900\/30 { background-color: rgba(160, 53, 53, 0.35); }
+[data-theme="red"] .bg-zinc-900\/50 { background-color: rgba(160, 53, 53, 0.55); }
+[data-theme="red"] .bg-zinc-900\/80 { background-color: rgba(160, 53, 53, 0.85); }
+[data-theme="red"] .bg-zinc-800\/80 { background-color: rgba(173, 61, 61, 0.85); }
+[data-theme="red"] .bg-zinc-800\/95 { background-color: rgba(173, 61, 61, 0.95); }
+[data-theme="red"] .hover\:bg-zinc-800\/40:hover { background-color: rgba(173, 61, 61, 0.45); }
+[data-theme="red"] .hover\:bg-zinc-800\/50:hover { background-color: rgba(173, 61, 61, 0.55); }
+[data-theme="red"] .hover\:bg-zinc-800\/60:hover { background-color: rgba(173, 61, 61, 0.65); }
+[data-theme="red"] .hover\:bg-zinc-900:hover { background-color: #a03535; }
+[data-theme="red"] .hover\:bg-zinc-900\/60:hover { background-color: rgba(160, 53, 53, 0.6); }
+[data-theme="red"] .hover\:bg-zinc-700\/60:hover { background-color: rgba(187, 72, 72, 0.6); }
+[data-theme="red"] .border-b-zinc-900 { border-bottom-color: #a03535; }
+[data-theme="red"] .border-b-zinc-950 { border-bottom-color: #962f2f; }
+[data-theme="red"] .border-zinc-500 { border-color: rgba(255, 255, 255, 0.5); }
+[data-theme="red"] .border-zinc-500\/80 { border-color: rgba(255, 255, 255, 0.45); }
+[data-theme="red"] .border-zinc-500\/20 { border-color: rgba(255, 255, 255, 0.18); }
+[data-theme="red"] .border-zinc-700\/60 { border-color: rgba(255, 255, 255, 0.2); }
+[data-theme="red"] .border-zinc-700\/30 { border-color: rgba(255, 255, 255, 0.12); }
+[data-theme="red"] .border-zinc-800\/80 { border-color: rgba(255, 255, 255, 0.12); }
+[data-theme="red"] .bg-zinc-300 { background-color: #ffffff; }
+[data-theme="red"] .bg-zinc-400 { background-color: rgba(255, 255, 255, 0.85); }
+[data-theme="red"] .border-zinc-300 { border-color: #ffffff; }
+[data-theme="red"] .border-zinc-400 { border-color: rgba(255, 255, 255, 0.8); }
